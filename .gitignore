@@ -1,0 +1,11 @@
+obj/
+*.o
+btd/*.d
+btctl/*.d
+regress/*/*.d
+parse.c
+btd/btd
+btctl/btctl
+regress/*/*_test
+regress/*/*.pcm
+regress/*/*.sbc

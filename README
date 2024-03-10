@@ -1,0 +1,5 @@
+btd - Bluetooth daemon for OpenBSD
+==================================
+
+btd drives a USB Bluetooth controller attached as ugen(4) from
+userland.
