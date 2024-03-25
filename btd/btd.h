@@ -96,6 +96,41 @@ struct bdaddr {
 #define	BDADDR_PUBLIC	0
 #define	BDADDR_RANDOM	1
 
+/* bus.c */
+void		 bus(int, int);
+
+/* frontend.c */
+void		 frontend(int, int);
+int		 frontend_imsg_compose_main(int, pid_t, void *, uint16_t);
+int		 frontend_imsg_compose_engine(int, pid_t, void *, uint16_t);
+
+/* engine.c */
+void		 engine(int, int);
+int		 engine_imsg_compose_main(int, void *, uint16_t);
+int		 engine_imsg_compose_bus(int, void *, uint16_t);
+int		 engine_imsg_compose_frontend(int, pid_t, void *, uint16_t);
+void		 engine_show_controller(pid_t);
+void		 engine_show_devices(pid_t);
+void		 engine_show_bonds(pid_t);
+void		 engine_local_identity(struct bdaddr *);
+void		 engine_ready(void);
+void		 engine_scan_changed(void);
+void		 engine_adv_report(const struct bdaddr *, uint8_t, int, int,
+		     const uint8_t *, size_t);
+void		 engine_create_status(void *, uint8_t, const uint8_t *,
+		     size_t);
+void		 engine_conn_up(struct hci_conn *);
+void		 engine_conn_down(struct hci_conn *, uint8_t);
+void		 engine_conn_failed(int, const struct bdaddr *, uint8_t);
+void		 engine_hci_event(uint8_t, const uint8_t *, size_t);
+void		 engine_le_event(uint8_t, const uint8_t *, size_t);
+void		 engine_schedule(void);
+void		 engine_release(struct device *);
+void		 engine_secured(struct hci_conn *, int);
+void		 device_reconf(void);
+void		 device_state(struct device *, int);
+struct device	*device_find(int, const struct bdaddr *);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,

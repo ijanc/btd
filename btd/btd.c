@@ -388,6 +388,251 @@ main_shutdown(void)
 	exit(0);
 }
 
+static pid_t
+start_child(enum btd_process p, char *execpath, int fd, int debug,
+    int verbose)
+{
+	char	*argv[7];
+	int	 argc = 0;
+	pid_t	 pid;
+
+	switch (pid = fork()) {
+	case -1:
+		fatal("cannot fork");
+	case 0:
+		break;
+	default:
+		close(fd);
+		return (pid);
+	}
+
+	if (fd != 3) {
+		if (dup2(fd, 3) == -1)
+			fatal("cannot setup imsg fd");
+	} else if (fcntl(fd, F_SETFD, 0) == -1)
+		fatal("cannot setup imsg fd");
+
+	argv[argc++] = execpath;
+	switch (p) {
+	case PROC_MAIN:
+		fatalx("Can not start main process");
+	case PROC_BUS:
+		argv[argc++] = "-B";
+		break;
+	case PROC_ENGINE:
+		argv[argc++] = "-E";
+		break;
+	case PROC_FRONTEND:
+		argv[argc++] = "-F";
+		break;
+	}
+	if (debug)
+		argv[argc++] = "-d";
+	if (verbose)
+		argv[argc++] = "-v";
+	if (verbose > 1)
+		argv[argc++] = "-v";
+	if (verbose > 2)
+		argv[argc++] = "-v";
+	argv[argc++] = NULL;
+
+	execv(execpath, argv);
+	fatal("execv");
+}
+
+void
+main_dispatch_bus(int fd, short event, void *bula)
+{
+	struct imsgev	*iev = bula;
+	struct imsgbuf	*ibuf = &iev->ibuf;
+	struct imsg	 imsg;
+	int		 n, shut = 0;
+
+	if (event & EV_READ) {
+		if ((n = imsgbuf_read(ibuf)) == -1)
+			fatal("imsgbuf_read error");
+		if (n == 0)
+			shut = 1;
+	}
+	if (event & EV_WRITE) {
+		if (imsgbuf_write(ibuf) == -1) {
+			if (errno == EPIPE)
+				shut = 1;
+			else
+				fatal("imsgbuf_write");
+		}
+	}
+
+	for (;;) {
+		if ((n = imsgbuf_get(ibuf, &imsg)) == -1)
+			fatal("imsgbuf_get");
+		if (n == 0)
+			break;
+		log_debug("%s: error handling imsg %d", __func__,
+		    imsg_get_type(&imsg));
+		imsg_free(&imsg);
+	}
+	if (!shut)
+		imsg_event_add(iev);
+	else {
+		event_del(&iev->ev);
+		event_loopexit(NULL);
+	}
+}
+
+void
+main_dispatch_engine(int fd, short event, void *bula)
+{
+	struct imsgev		*iev = bula;
+	struct imsgbuf		*ibuf = &iev->ibuf;
+	struct imsg		 imsg;
+	struct bond		 bond;
+	struct bond_local	 local;
+	uint32_t		 type;
+	int			 n, shut = 0;
+
+	if (event & EV_READ) {
+		if ((n = imsgbuf_read(ibuf)) == -1)
+			fatal("imsgbuf_read error");
+		if (n == 0)
+			shut = 1;
+	}
+	if (event & EV_WRITE) {
+		if (imsgbuf_write(ibuf) == -1) {
+			if (errno == EPIPE)
+				shut = 1;
+			else
+				fatal("imsgbuf_write");
+		}
+	}
+
+	for (;;) {
+		if ((n = imsgbuf_get(ibuf, &imsg)) == -1)
+			fatal("imsgbuf_get");
+		if (n == 0)
+			break;
+
+		type = imsg_get_type(&imsg);
+		switch (type) {
+		case IMSG_BOND_SAVE:
+			if (imsg_get_data(&imsg, &bond, sizeof(bond)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			main_bond_save(&bond);
+			break;
+		case IMSG_BOND_DELETE:
+			if (imsg_get_data(&imsg, &bond, sizeof(bond)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			main_bond_delete(&bond);
+			break;
+		case IMSG_BOND_LOCAL_SAVE:
+			if (imsg_get_data(&imsg, &local, sizeof(local)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			main_bond_local_save(&local);
+			break;
+		default:
+			log_debug("%s: error handling imsg %d", __func__, type);
+			break;
+		}
+		imsg_free(&imsg);
+	}
+	if (!shut)
+		imsg_event_add(iev);
+	else {
+		event_del(&iev->ev);
+		event_loopexit(NULL);
+	}
+}
+
+void
+main_dispatch_frontend(int fd, short event, void *bula)
+{
+	struct imsgev	*iev = bula;
+	struct imsgbuf	*ibuf = &iev->ibuf;
+	struct imsg	 imsg;
+	uint32_t	 type;
+	int		 n, shut = 0, verbose;
+
+	if (event & EV_READ) {
+		if ((n = imsgbuf_read(ibuf)) == -1)
+			fatal("imsgbuf_read error");
+		if (n == 0)
+			shut = 1;
+	}
+	if (event & EV_WRITE) {
+		if (imsgbuf_write(ibuf) == -1) {
+			if (errno == EPIPE)
+				shut = 1;
+			else
+				fatal("imsgbuf_write");
+		}
+	}
+
+	for (;;) {
+		if ((n = imsgbuf_get(ibuf, &imsg)) == -1)
+			fatal("imsgbuf_get");
+		if (n == 0)
+			break;
+
+		type = imsg_get_type(&imsg);
+		switch (type) {
+		case IMSG_CTL_LOG_VERBOSE:
+			if (imsg_get_data(&imsg, &verbose,
+			    sizeof(verbose)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			log_setverbose(verbose);
+			imsg_compose_event(iev_bus, type, 0, 0, -1, &verbose,
+			    sizeof(verbose));
+			break;
+		case IMSG_CTL_RELOAD:
+			if (main_reload() == -1)
+				log_warnx("configuration reload failed");
+			else
+				log_info("configuration reloaded");
+			break;
+		default:
+			log_debug("%s: error handling imsg %d", __func__, type);
+			break;
+		}
+		imsg_free(&imsg);
+	}
+	if (!shut)
+		imsg_event_add(iev);
+	else {
+		event_del(&iev->ev);
+		event_loopexit(NULL);
+	}
+}
+
+static int
+main_imsg_send_ipc_sockets(void)
+{
+	int	 pipe_frontend2engine[2], pipe_bus2engine[2];
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+	    PF_UNSPEC, pipe_frontend2engine) == -1)
+		return (-1);
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+	    PF_UNSPEC, pipe_bus2engine) == -1)
+		return (-1);
+
+	if (imsg_compose(&iev_frontend->ibuf, IMSG_SOCKET_IPC, 0, 0,
+	    pipe_frontend2engine[0], NULL, 0) == -1)
+		return (-1);
+	imsgbuf_flush(&iev_frontend->ibuf);
+	if (imsg_compose(&iev_engine->ibuf, IMSG_SOCKET_IPC, 0, 0,
+	    pipe_frontend2engine[1], NULL, 0) == -1)
+		return (-1);
+	if (imsg_compose(&iev_engine->ibuf, IMSG_SOCKET_BUS, 0, 0,
+	    pipe_bus2engine[1], NULL, 0) == -1)
+		return (-1);
+	imsgbuf_flush(&iev_engine->ibuf);
+	if (imsg_compose(&iev_bus->ibuf, IMSG_SOCKET_BUS, 0, 0,
+	    pipe_bus2engine[0], NULL, 0) == -1)
+		return (-1);
+	imsgbuf_flush(&iev_bus->ibuf);
+	return (0);
+}
+
 void
 imsg_event_add(struct imsgev *iev)
 {
@@ -408,6 +653,17 @@ imsg_compose_event(struct imsgev *iev, uint16_t type, uint32_t peerid,
 
 	if ((ret = imsg_compose(&iev->ibuf, type, peerid, pid, fd, data,
 	    datalen)) != -1)
+		imsg_event_add(iev);
+
+	return (ret);
+}
+
+int
+imsg_forward_event(struct imsgev *iev, struct imsg *imsg)
+{
+	int	ret;
+
+	if ((ret = imsg_forward(&iev->ibuf, imsg)) != -1)
 		imsg_event_add(iev);
 
 	return (ret);
@@ -451,3 +707,58 @@ bdaddr_cmp(const struct bdaddr *a, const struct bdaddr *b)
 
 #define	I2S(x) case x: return #x
 
+const char *
+i2s(uint32_t type)
+{
+	static char	unknown[sizeof("IMSG_4294967295")];
+
+	switch (type) {
+	I2S(IMSG_NONE);
+	I2S(IMSG_CTL_LOG_VERBOSE);
+	I2S(IMSG_CTL_RELOAD);
+	I2S(IMSG_CTL_SHOW_CONTROLLER);
+	I2S(IMSG_CTL_SHOW_DEVICES);
+	I2S(IMSG_CTL_SHOW_BONDS);
+	I2S(IMSG_CTL_CONTROLLER);
+	I2S(IMSG_CTL_DEVICE);
+	I2S(IMSG_CTL_BOND);
+	I2S(IMSG_CTL_END);
+	I2S(IMSG_SOCKET_IPC);
+	I2S(IMSG_SOCKET_BUS);
+	I2S(IMSG_CONTROLFD);
+	I2S(IMSG_DEVFD_CTL);
+	I2S(IMSG_DEVFD_INTR);
+	I2S(IMSG_DEVFD_BULK);
+	I2S(IMSG_DEVFD_WSCFG);
+	I2S(IMSG_KBDTYPE);
+	I2S(IMSG_FIRMWARE);
+	I2S(IMSG_FIRMWARE_CONFIG);
+	I2S(IMSG_FIRMWARE_END);
+	I2S(IMSG_BOND);
+	I2S(IMSG_BOND_LOCAL);
+	I2S(IMSG_BOND_SAVE);
+	I2S(IMSG_BOND_DELETE);
+	I2S(IMSG_BOND_LOCAL_SAVE);
+	I2S(IMSG_BONDS_END);
+	I2S(IMSG_RECONF_CONF);
+	I2S(IMSG_RECONF_HID);
+	I2S(IMSG_RECONF_HEADSET);
+	I2S(IMSG_RECONF_END);
+	I2S(IMSG_STARTUP);
+	I2S(IMSG_HCI_CMD);
+	I2S(IMSG_HCI_ACL);
+	I2S(IMSG_HCI_EVT);
+	I2S(IMSG_HCI_ACLDATA);
+	I2S(IMSG_WSKBD);
+	I2S(IMSG_WSMOUSE);
+	I2S(IMSG_AUDIO_START);
+	I2S(IMSG_AUDIO_STOP);
+	I2S(IMSG_AUDIO_FRAME);
+	I2S(IMSG_VOLUME_LOCAL);
+	I2S(IMSG_VOLUME_REMOTE);
+	default:
+		snprintf(unknown, sizeof(unknown), "IMSG_%u", type);
+		return (unknown);
+	}
+}
+#undef	I2S
