@@ -633,6 +633,49 @@ main_imsg_send_ipc_sockets(void)
 	return (0);
 }
 
+int
+main_reload(void)
+{
+	struct btd_conf	*xconf;
+
+	if ((xconf = parse_config(conffile)) == NULL)
+		return (-1);
+
+	if (strcmp(xconf->device, main_conf->device) != 0)
+		log_warnx("device change needs a restart");
+	if (strcmp(xconf->firmware, main_conf->firmware) != 0)
+		log_warnx("firmware change needs a restart");
+
+	main_send_config(iev_engine, xconf);
+	main_send_config(iev_frontend, xconf);
+
+	config_clear(main_conf);
+	main_conf = xconf;
+	return (0);
+}
+
+void
+main_send_config(struct imsgev *iev, struct btd_conf *xconf)
+{
+	struct btd_conf	 c;
+	struct hid_conf	*hid;
+
+	memset(&c, 0, sizeof(c));
+	strlcpy(c.name, xconf->name, sizeof(c.name));
+	strlcpy(c.device, xconf->device, sizeof(c.device));
+	strlcpy(c.firmware, xconf->firmware, sizeof(c.firmware));
+	imsg_compose_event(iev, IMSG_RECONF_CONF, 0, 0, -1, &c, sizeof(c));
+
+	TAILQ_FOREACH(hid, &xconf->hid_list, entry)
+		imsg_compose_event(iev, IMSG_RECONF_HID, 0, 0, -1, hid,
+		    sizeof(*hid));
+	if (xconf->headset != NULL)
+		imsg_compose_event(iev, IMSG_RECONF_HEADSET, 0, 0, -1,
+		    xconf->headset, sizeof(*xconf->headset));
+
+	imsg_compose_event(iev, IMSG_RECONF_END, 0, 0, -1, NULL, 0);
+}
+
 void
 imsg_event_add(struct imsgev *iev)
 {
@@ -667,6 +710,32 @@ imsg_forward_event(struct imsgev *iev, struct imsg *imsg)
 		imsg_event_add(iev);
 
 	return (ret);
+}
+
+struct btd_conf *
+config_new_empty(void)
+{
+	struct btd_conf	*xconf;
+
+	if ((xconf = calloc(1, sizeof(*xconf))) == NULL)
+		fatal(NULL);
+	TAILQ_INIT(&xconf->hid_list);
+	return (xconf);
+}
+
+void
+config_clear(struct btd_conf *xconf)
+{
+	struct hid_conf	*hid;
+
+	if (xconf == NULL)
+		return;
+	while ((hid = TAILQ_FIRST(&xconf->hid_list)) != NULL) {
+		TAILQ_REMOVE(&xconf->hid_list, hid, entry);
+		free(hid);
+	}
+	free(xconf->headset);
+	free(xconf);
 }
 
 const char *

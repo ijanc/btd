@@ -1,5 +1,5 @@
 PROG=	btd
-SRCS=	btd.c bus.c engine.c frontend.c log.c
+SRCS=	btd.c bus.c engine.c frontend.c parse.y printconf.c log.c
 
 MAN=
 

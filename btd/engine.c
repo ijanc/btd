@@ -483,3 +483,14 @@ engine_dispatch_frontend(int fd, short event, void *bula)
 	}
 }
 
+void
+engine_reconf(struct btd_conf *xconf)
+{
+	struct btd_conf	*old = engine_state.conf;
+
+	engine_state.conf = xconf;
+	if (started)
+		device_reconf();
+	config_clear(old);
+}
+

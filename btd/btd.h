@@ -96,6 +96,33 @@ struct bdaddr {
 #define	BDADDR_PUBLIC	0
 #define	BDADDR_RANDOM	1
 
+struct hid_conf {
+	TAILQ_ENTRY(hid_conf)	 entry;
+	struct bdaddr		 addr;
+};
+
+struct headset_conf {
+	struct bdaddr		 addr;
+	int			 rate;
+	int			 bitpool;
+};
+
+struct btd_conf {
+	char			 name[BTD_NAMELEN];
+	char			 device[16];
+	char			 firmware[BTD_NAMELEN];
+	TAILQ_HEAD(, hid_conf)	 hid_list;
+	struct headset_conf	*headset;
+};
+
+#define	BOND_LE		1
+#define	BOND_BR		2
+
+#define	BOND_F_AUTH	0x01
+#define	BOND_F_SC	0x02
+#define	BOND_F_IRK	0x04
+#define	BOND_F_LTK	0x08
+
 /* bus.c */
 void		 bus(int, int);
 
@@ -143,3 +170,8 @@ int		 bdaddr_cmp(const struct bdaddr *, const struct bdaddr *);
 struct btd_conf	*config_new_empty(void);
 void		 config_clear(struct btd_conf *);
 
+/* parse.y */
+struct btd_conf	*parse_config(const char *);
+
+/* printconf.c */
+void		 print_config(struct btd_conf *);
