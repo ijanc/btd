@@ -676,6 +676,51 @@ main_send_config(struct imsgev *iev, struct btd_conf *xconf)
 	imsg_compose_event(iev, IMSG_RECONF_END, 0, 0, -1, NULL, 0);
 }
 
+int
+find_dongle(char *dev, size_t len)
+{
+	struct usb_device_info	 udi;
+	char			 path[32];
+	int			 bus, addr, fd, i;
+
+	for (bus = 0; bus < 10; bus++) {
+		snprintf(path, sizeof(path), "/dev/usb%d", bus);
+		if ((fd = open(path, O_RDONLY)) == -1)
+			continue;
+		for (addr = 1; addr < USB_MAX_DEVICES; addr++) {
+			memset(&udi, 0, sizeof(udi));
+			udi.udi_addr = addr;
+			if (ioctl(fd, USB_DEVICEINFO, &udi) == -1)
+				continue;
+			if (udi.udi_class != 0xe0 || udi.udi_subclass != 0x01 ||
+			    udi.udi_protocol != 0x01)
+				continue;
+			for (i = 0; i < USB_MAX_DEVNAMES; i++) {
+				if (strncmp(udi.udi_devnames[i], "ugen", 4)
+				    != 0)
+					continue;
+				strlcpy(dev, udi.udi_devnames[i], len);
+				close(fd);
+				return (0);
+			}
+		}
+		close(fd);
+	}
+	return (-1);
+}
+
+int
+open_ep(const char *dev, int ep, int flags)
+{
+	char	 path[32];
+	int	 fd;
+
+	snprintf(path, sizeof(path), "/dev/%s.%02d", dev, ep);
+	if ((fd = open(path, flags | O_CLOEXEC)) == -1)
+		fatal("%s", path);
+	return (fd);
+}
+
 void
 imsg_event_add(struct imsgev *iev)
 {

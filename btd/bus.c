@@ -142,6 +142,16 @@ bus_shutdown(void)
 }
 
 void
+bus_kill_reader(void)
+{
+	if (reader_pid <= 0)
+		return;
+	kill(reader_pid, SIGTERM);
+	waitpid(reader_pid, NULL, 0);
+	reader_pid = -1;
+}
+
+void
 bus_dispatch_main(int fd, short event, void *bula)
 {
 	struct imsgev	*iev = bula;
@@ -301,5 +311,137 @@ bus_dispatch_engine(int fd, short event, void *bula)
 		event_del(&iev->ev);
 		event_loopexit(NULL);
 	}
+}
+
+void
+bus_startup(void)
+{
+	int	 sp[2];
+
+	if (ctlfd == -1 || intrfd == -1 || bulkfd == -1 || cfgfd == -1 ||
+	    iev_engine == NULL)
+		fatalx("%s: missing descriptors", __func__);
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, PF_UNSPEC, sp)
+	    == -1)
+		fatal("socketpair");
+
+	switch (reader_pid = fork()) {
+	case -1:
+		fatal("fork");
+	case 0:
+		reader_pid = -1;
+		bus_reader(bulkfd, sp[1]);
+	default:
+		break;
+	}
+	close(sp[1]);
+	if (fcntl(sp[0], F_SETFL, O_NONBLOCK) == -1)
+		fatal("fcntl");
+
+	event_set(&ev_acl, sp[0], EV_READ | EV_PERSIST, bus_acl, NULL);
+	event_add(&ev_acl, NULL);
+	event_set(&ev_intr, intrfd, EV_READ | EV_PERSIST, bus_intr, NULL);
+	event_add(&ev_intr, NULL);
+
+	imsg_compose_event(iev_engine, IMSG_STARTUP, 0, 0, -1, NULL, 0);
+}
+
+/*
+ * ugen(4) reports the bulk endpoint as always readable, so it gets a
+ * process of its own blocked in read(2).
+ */
+__dead void
+bus_reader(int fd, int out)
+{
+	uint8_t	 buf[BUS_READSIZE];
+	ssize_t	 n;
+	int	 one = 1;
+
+	setproctitle("%s", "bus acl");
+	log_procinit("acl");
+
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	if (dup2(fd, 3) == -1 || dup2(out, 4) == -1)
+		fatal("dup2");
+	closefrom(5);
+
+	if (ioctl(3, USB_SET_SHORT_XFER, &one) == -1)
+		fatal("USB_SET_SHORT_XFER");
+
+	if (pledge("stdio", NULL) == -1)
+		fatal("pledge");
+
+	for (;;) {
+		if ((n = read(3, buf, sizeof(buf))) == -1) {
+			if (errno == EINTR)
+				continue;
+			fatal("acl read");
+		}
+		if (n == 0)
+			continue;
+		if (write(4, buf, n) != n)
+			_exit(0);
+	}
+}
+
+void
+bus_intr(int fd, short event, void *bula)
+{
+	uint8_t	 buf[BUS_READSIZE];
+	ssize_t	 n;
+
+	if ((n = read(fd, buf, sizeof(buf))) == -1) {
+		if (errno == EAGAIN || errno == EINTR)
+			return;
+		fatal("event read");
+	}
+	if (n == 0)
+		return;
+	imsg_compose_event(iev_engine, IMSG_HCI_EVT, 0, 0, -1, buf, n);
+}
+
+void
+bus_acl(int fd, short event, void *bula)
+{
+	uint8_t	 buf[BUS_READSIZE];
+	ssize_t	 n;
+
+	if ((n = read(fd, buf, sizeof(buf))) == -1) {
+		if (errno == EAGAIN || errno == EINTR)
+			return;
+		fatal("acl read");
+	}
+	if (n == 0)
+		fatalx("acl reader exited");
+	imsg_compose_event(iev_engine, IMSG_HCI_ACLDATA, 0, 0, -1, buf, n);
+}
+
+void
+bus_cmd(uint8_t *p, size_t len)
+{
+	struct usb_ctl_request	 ucr;
+
+	memset(&ucr, 0, sizeof(ucr));
+	ucr.ucr_request.bmRequestType = UT_WRITE_CLASS_DEVICE;
+	ucr.ucr_request.bRequest = 0;
+	USETW(ucr.ucr_request.wValue, 0);
+	USETW(ucr.ucr_request.wIndex, 0);
+	USETW(ucr.ucr_request.wLength, len);
+	ucr.ucr_data = p;
+	if (ioctl(ctlfd, USB_DO_REQUEST, &ucr) == -1)
+		log_warn("USB_DO_REQUEST");
+}
+
+void
+bus_write_acl(uint8_t *p, size_t len)
+{
+	ssize_t	 n;
+
+	if ((n = write(bulkfd, p, len)) == -1)
+		log_warn("acl write");
+	else if ((size_t)n != len)
+		log_warnx("acl write: short write");
 }
 
