@@ -494,3 +494,76 @@ engine_reconf(struct btd_conf *xconf)
 	config_clear(old);
 }
 
+void
+engine_hci_event(uint8_t code, const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+
+	switch (code) {
+	case HCI_EVT_CONN_REQUEST:
+		engine_conn_request(p, len);
+		break;
+	case HCI_EVT_ENCRYPTION_CHANGE:
+		engine_encryption(p, len, 0);
+		break;
+	case HCI_EVT_ENCRYPTION_KEY_REFRESH:
+		engine_encryption(p, len, 1);
+		break;
+	case HCI_EVT_LINK_KEY_REQUEST:
+	case HCI_EVT_LINK_KEY_NOTIFICATION:
+	case HCI_EVT_PIN_CODE_REQUEST:
+	case HCI_EVT_IO_CAP_REQUEST:
+	case HCI_EVT_IO_CAP_RESPONSE:
+	case HCI_EVT_USER_CONFIRM_REQUEST:
+	case HCI_EVT_SSP_COMPLETE:
+	case HCI_EVT_AUTH_COMPLETE:
+		ssp_event(code, p, len);
+		break;
+	case HCI_EVT_ROLE_CHANGE:
+		if (len >= 8)
+			log_debug("%s: role %s, status 0x%02x",
+			    bdaddr_ntoa((const struct bdaddr *)(p + 1)),
+			    p[7] ? "peripheral" : "central", p[0]);
+		break;
+	case HCI_EVT_MODE_CHANGE:
+		if (len >= 6 && (c = hci_conn_find(get16(p + 1))) != NULL)
+			log_debug("%s: mode %u, interval %u",
+			    bdaddr_ntoa(&c->peer), p[3], get16(p + 4));
+		break;
+	default:
+		if (log_getverbose() > 2)
+			log_debug("unhandled event 0x%02x", code);
+		break;
+	}
+}
+
+void
+engine_le_event(uint8_t sub, const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	uint8_t		 rsp[2];
+
+	switch (sub) {
+	case HCI_LE_CONN_UPDATE_COMPLETE:
+		if (len < 9 || p[0] != 0 ||
+		    (c = hci_conn_find(get16(p + 1))) == NULL)
+			break;
+		c->le_interval = get16(p + 3);
+		c->le_latency = get16(p + 5);
+		c->le_timeout = get16(p + 7);
+		log_debug("%s: interval %u, latency %u, timeout %u",
+		    bdaddr_ntoa(&c->peer), c->le_interval, c->le_latency,
+		    c->le_timeout);
+		break;
+	case HCI_LE_LTK_REQUEST:
+		if (len < 2)
+			break;
+		put16(rsp, get16(p));
+		hci_cmd(HCI_CMD_LE_LTK_NEG_REPLY, rsp, sizeof(rsp), NULL,
+		    NULL);
+		break;
+	default:
+		break;
+	}
+}
+
