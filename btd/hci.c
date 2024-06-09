@@ -443,6 +443,213 @@ hci_le_event(const uint8_t *p, size_t len)
 	}
 }
 
+void
+hci_start(void)
+{
+	hci.state = HCI_S_INIT;
+	hci.scan_want = hci.scanning = 0;
+	hci_init_next(I_RESET);
+}
+
+/*
+ * Bring the controller up one command at a time, each step started
+ * from the completion of the previous one.
+ */
+static void
+hci_init_next(int step)
+{
+	uint8_t	 p[248];
+	void	*arg = (void *)(intptr_t)step;
+
+	switch (step) {
+	case I_RESET:
+		hci_cmd(HCI_CMD_RESET, NULL, 0, hci_init_step, arg);
+		break;
+	case I_COMMANDS:
+		hci_cmd(HCI_CMD_READ_LOCAL_COMMANDS, NULL, 0, hci_init_step,
+		    arg);
+		break;
+	case I_VERSION:
+		hci_cmd(HCI_CMD_READ_LOCAL_VERSION, NULL, 0, hci_init_step,
+		    arg);
+		break;
+	case I_LE_FEATURES:
+		hci_cmd(HCI_CMD_LE_READ_LOCAL_FEATURES, NULL, 0,
+		    hci_init_step, arg);
+		break;
+	case I_EXT_FEATURES:
+		p[0] = ext_page;
+		hci_cmd(HCI_CMD_READ_LOCAL_EXT_FEATURES, p, 1, hci_init_step,
+		    arg);
+		break;
+	case I_EVENT_MASK:
+		put64(p, 0x3dbff807bfff9fffULL);
+		hci_cmd(HCI_CMD_SET_EVENT_MASK, p, 8, hci_init_step, arg);
+		break;
+	case I_LE_EVENT_MASK:
+		put64(p, 0x007bed0ffff7ffffULL);
+		hci_cmd(HCI_CMD_LE_SET_EVENT_MASK, p, 8, hci_init_step, arg);
+		break;
+	case I_BUFFER_SIZE:
+		hci_cmd(HCI_CMD_READ_BUFFER_SIZE, NULL, 0, hci_init_step, arg);
+		break;
+	case I_LE_BUFFER_SIZE:
+		hci_cmd(HCI_CMD_LE_READ_BUFFER_SIZE, NULL, 0, hci_init_step,
+		    arg);
+		break;
+	case I_DATA_LEN_READ:
+		hci_cmd(HCI_CMD_LE_READ_DEFAULT_DATA_LEN, NULL, 0,
+		    hci_init_step, arg);
+		break;
+	case I_DATA_LEN_WRITE:
+		put16(p, 251);
+		put16(p + 2, 2120);
+		hci_cmd(HCI_CMD_LE_WRITE_DEFAULT_DATA_LEN, p, 4,
+		    hci_init_step, arg);
+		break;
+	case I_ADV_SETS:
+		hci_cmd(HCI_CMD_LE_READ_NUM_ADV_SETS, NULL, 0, hci_init_step,
+		    arg);
+		break;
+	case I_ADV_DATA_LEN:
+		hci_cmd(HCI_CMD_LE_READ_MAX_ADV_DATA_LEN, NULL, 0,
+		    hci_init_step, arg);
+		break;
+	case I_BDADDR:
+		hci_cmd(HCI_CMD_READ_BDADDR, NULL, 0, hci_init_step, arg);
+		break;
+	case I_LE_HOST:
+		p[0] = 1;
+		p[1] = 0;
+		hci_cmd(HCI_CMD_WRITE_LE_HOST_SUPPORT, p, 2, hci_init_step,
+		    arg);
+		break;
+	case I_RANDOM_ADDR:
+		engine_local_identity(&hci.random);
+		memcpy(p, hci.random.b, 6);
+		hci_cmd(HCI_CMD_LE_SET_RANDOM_ADDR, p, 6, hci_init_step, arg);
+		break;
+	case I_LOCAL_NAME:
+		memset(p, 0, sizeof(p));
+		strlcpy((char *)p, engine_state.conf->name, sizeof(p));
+		hci_cmd(HCI_CMD_WRITE_LOCAL_NAME, p, 248, hci_init_step, arg);
+		break;
+	case I_CLASS:
+		memset(p, 0, 3);
+		hci_cmd(HCI_CMD_WRITE_CLASS_OF_DEVICE, p, 3, hci_init_step,
+		    arg);
+		break;
+	case I_SSP_MODE:
+		p[0] = 1;
+		hci_cmd(HCI_CMD_WRITE_SSP_MODE, p, 1, hci_init_step, arg);
+		break;
+	case I_SC_HOST:
+		p[0] = 1;
+		hci_cmd(HCI_CMD_WRITE_SC_HOST_SUPPORT, p, 1, hci_init_step,
+		    arg);
+		break;
+	case I_SCAN_ENABLE:
+		p[0] = HCI_SCAN_PAGE;
+		hci_cmd(HCI_CMD_WRITE_SCAN_ENABLE, p, 1, hci_init_step, arg);
+		break;
+	case I_PAGE_SCAN_TYPE:
+		p[0] = 1;
+		hci_cmd(HCI_CMD_WRITE_PAGE_SCAN_TYPE, p, 1, hci_init_step,
+		    arg);
+		break;
+	case I_INQUIRY_SCAN_TYPE:
+		p[0] = 1;
+		hci_cmd(HCI_CMD_WRITE_INQUIRY_SCAN_TYPE, p, 1, hci_init_step,
+		    arg);
+		break;
+	case I_DONE:
+		hci_init_done();
+		break;
+	}
+}
+
+static void
+hci_init_step(void *arg, uint8_t status, const uint8_t *rp, size_t len)
+{
+	int	 step = (intptr_t)arg;
+
+	if (status != 0 && step != I_ADV_SETS && step != I_ADV_DATA_LEN &&
+	    step != I_DATA_LEN_READ && step != I_DATA_LEN_WRITE)
+		fatalx("controller init step %d failed: 0x%02x", step, status);
+
+	switch (step) {
+	case I_COMMANDS:
+		if (len >= sizeof(hci.commands))
+			memcpy(hci.commands, rp, sizeof(hci.commands));
+		break;
+	case I_VERSION:
+		if (len < 8)
+			fatalx("short local version");
+		hci.hci_ver = rp[0];
+		hci.hci_rev = get16(rp + 1);
+		hci.lmp_ver = rp[3];
+		hci.manufacturer = get16(rp + 4);
+		hci.lmp_subver = get16(rp + 6);
+		log_info("controller: HCI 0x%02x revision 0x%04x, LMP 0x%02x "
+		    "subversion 0x%04x, manufacturer 0x%04x", hci.hci_ver,
+		    hci.hci_rev, hci.lmp_ver, hci.lmp_subver,
+		    hci.manufacturer);
+		if (rtk_needed()) {
+			hci.state = HCI_S_FIRMWARE;
+			rtk_load();
+			return;
+		}
+		ext_page = 0;
+		break;
+	case I_LE_FEATURES:
+		if (len >= sizeof(hci.le_features))
+			memcpy(hci.le_features, rp, sizeof(hci.le_features));
+		break;
+	case I_EXT_FEATURES:
+		if (len >= 10 && rp[0] < nitems(hci.features))
+			memcpy(hci.features[rp[0]], rp + 2, 8);
+		if (len >= 2 && ext_page < rp[1] &&
+		    ext_page + 1 < (int)nitems(hci.features)) {
+			ext_page++;
+			hci_init_next(I_EXT_FEATURES);
+			return;
+		}
+		break;
+	case I_BUFFER_SIZE:
+		if (len < 7)
+			fatalx("short buffer size");
+		hci.acl_len = get16(rp);
+		hci.acl_num = get16(rp + 3);
+		hci.acl_free = hci.acl_num;
+		break;
+	case I_LE_BUFFER_SIZE:
+		if (len < 3)
+			fatalx("short LE buffer size");
+		hci.le_acl_len = get16(rp);
+		hci.le_acl_num = rp[2];
+		hci.le_acl_free = hci.le_acl_num;
+		break;
+	case I_BDADDR:
+		if (len < 6)
+			fatalx("short BD_ADDR");
+		memcpy(hci.bdaddr.b, rp, 6);
+		break;
+	}
+	hci_init_next(step + 1);
+}
+
+static void
+hci_init_done(void)
+{
+	hci.ext_scan = (hci.le_features[1] & 0x10) != 0;
+	hci.coded_phy = (hci.le_features[1] & 0x08) != 0;
+	hci.state = HCI_S_RUNNING;
+	log_info("controller %s ready: ACL %u x %u, LE ACL %u x %u",
+	    bdaddr_ntoa(&hci.bdaddr), hci.acl_num, hci.acl_len,
+	    hci.le_acl_num, hci.le_acl_len);
+	engine_ready();
+}
+
 uint16_t
 get16(const uint8_t *p)
 {

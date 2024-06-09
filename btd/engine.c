@@ -495,6 +495,37 @@ engine_reconf(struct btd_conf *xconf)
 }
 
 void
+engine_try_start(void)
+{
+	if (started || !startup_main || !startup_bus || !fw_done)
+		return;
+	started = 1;
+	sdp_init();
+	avdtp_init();
+	avrcp_init();
+	evtimer_set(&connect_timer, engine_connect_timeout, NULL);
+	device_reconf();
+	hci_start();
+}
+
+void
+engine_local_identity(struct bdaddr *addr)
+{
+	struct bond_local	*local = &engine_state.local;
+
+	if (!engine_state.have_local) {
+		arc4random_buf(local->addr.b, sizeof(local->addr.b));
+		local->addr.b[5] |= 0xc0;
+		arc4random_buf(local->irk, sizeof(local->irk));
+		engine_state.have_local = 1;
+		engine_imsg_compose_main(IMSG_BOND_LOCAL_SAVE, local,
+		    sizeof(*local));
+		log_info("new identity address %s", bdaddr_ntoa(&local->addr));
+	}
+	*addr = local->addr;
+}
+
+void
 engine_hci_event(uint8_t code, const uint8_t *p, size_t len)
 {
 	struct hci_conn	*c;
@@ -565,5 +596,17 @@ engine_le_event(uint8_t sub, const uint8_t *p, size_t len)
 	default:
 		break;
 	}
+}
+
+void
+engine_ready(void)
+{
+	struct device	*dev;
+
+	TAILQ_FOREACH(dev, &devices, entry)
+		if (dev->state == DEV_IDLE || dev->state == DEV_CONNECTING)
+			dev->state = DEV_WAIT;
+	busy = NULL;
+	engine_schedule();
 }
 
