@@ -676,6 +676,57 @@ main_send_config(struct imsgev *iev, struct btd_conf *xconf)
 	imsg_compose_event(iev, IMSG_RECONF_END, 0, 0, -1, NULL, 0);
 }
 
+void
+main_send_firmware(const char *name)
+{
+	char	 path[PATH_MAX];
+
+	snprintf(path, sizeof(path), "%s/%s_fw", _PATH_FIRMWARE, name);
+	main_send_file(path, IMSG_FIRMWARE);
+	snprintf(path, sizeof(path), "%s/%s_config", _PATH_FIRMWARE, name);
+	main_send_file(path, IMSG_FIRMWARE_CONFIG);
+}
+
+void
+main_send_file(const char *path, enum imsg_type type)
+{
+	struct stat	 st;
+	uint8_t		*buf;
+	size_t		 off, len;
+	ssize_t		 n;
+	int		 fd;
+
+	if ((fd = open(path, O_RDONLY)) == -1) {
+		log_warn("%s", path);
+		return;
+	}
+	if (fstat(fd, &st) == -1)
+		fatal("%s", path);
+	if (st.st_size <= 0 || st.st_size > FW_MAXSIZE) {
+		log_warnx("%s: bad size", path);
+		close(fd);
+		return;
+	}
+	if ((buf = malloc(st.st_size)) == NULL)
+		fatal(NULL);
+	for (off = 0; off < (size_t)st.st_size; off += n) {
+		if ((n = read(fd, buf + off, st.st_size - off)) == -1)
+			fatal("%s", path);
+		if (n == 0)
+			fatalx("%s: short read", path);
+	}
+	close(fd);
+
+	for (off = 0; off < (size_t)st.st_size; off += len) {
+		len = st.st_size - off;
+		if (len > BTD_FWCHUNK)
+			len = BTD_FWCHUNK;
+		imsg_compose_event(iev_engine, type, 0, 0, -1, buf + off, len);
+	}
+	free(buf);
+	log_debug("%s: %lld bytes", path, (long long)st.st_size);
+}
+
 int
 find_dongle(char *dev, size_t len)
 {

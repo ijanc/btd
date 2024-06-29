@@ -472,6 +472,10 @@ void		 put16(uint8_t *, uint16_t);
 void		 put32(uint8_t *, uint32_t);
 void		 put64(uint8_t *, uint64_t);
 
+/* rtk.c */
+int		 rtk_needed(void);
+void		 rtk_load(void);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,

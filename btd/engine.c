@@ -484,6 +484,22 @@ engine_dispatch_frontend(int fd, short event, void *bula)
 }
 
 void
+engine_fw_append(struct engine_fw *fw, const void *p, size_t len)
+{
+	uint8_t	*nbuf;
+
+	if (fw->len + len > fw->size) {
+		if ((nbuf = recallocarray(fw->buf, fw->size, fw->len + len, 1))
+		    == NULL)
+			fatal(NULL);
+		fw->buf = nbuf;
+		fw->size = fw->len + len;
+	}
+	memcpy(fw->buf + fw->len, p, len);
+	fw->len += len;
+}
+
+void
 engine_reconf(struct btd_conf *xconf)
 {
 	struct btd_conf	*old = engine_state.conf;
