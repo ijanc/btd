@@ -443,6 +443,141 @@ hci_le_event(const uint8_t *p, size_t len)
 	}
 }
 
+struct hci_conn *
+hci_conn_find(uint16_t handle)
+{
+	struct hci_conn	*c;
+
+	TAILQ_FOREACH(c, &hci_conns, entry)
+		if (c->handle == handle)
+			return (c);
+	return (NULL);
+}
+
+struct hci_conn *
+hci_conn_find_addr(int link, const struct bdaddr *addr)
+{
+	struct hci_conn	*c;
+
+	TAILQ_FOREACH(c, &hci_conns, entry)
+		if (c->link == link && bdaddr_cmp(&c->peer, addr) == 0)
+			return (c);
+	return (NULL);
+}
+
+static struct hci_conn *
+hci_conn_new(uint16_t handle, int link)
+{
+	struct hci_conn	*c;
+
+	if ((c = calloc(1, sizeof(*c))) == NULL)
+		fatal(NULL);
+	c->handle = handle;
+	c->link = link;
+	TAILQ_INIT(&c->chans);
+	c->sig_ident = 1;
+	c->next_cid = L2CAP_CID_DYN;
+	TAILQ_INSERT_TAIL(&hci_conns, c, entry);
+	return (c);
+}
+
+static void
+hci_conn_complete(const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	struct bdaddr	 addr;
+	uint8_t		 status;
+
+	if (len < 11)
+		return;
+	status = p[0];
+	memcpy(addr.b, p + 3, 6);
+	if (status != 0) {
+		engine_conn_failed(LINK_BR, &addr, status);
+		return;
+	}
+	if (p[9] != 0x01)
+		return;
+	c = hci_conn_new(get16(p + 1) & 0x0fff, LINK_BR);
+	c->peer = addr;
+	c->peer_type = BDADDR_PUBLIC;
+	c->encrypted = p[10];
+	log_debug("%s: connection 0x%04x up", bdaddr_ntoa(&addr), c->handle);
+	engine_conn_up(c);
+}
+
+static void
+hci_le_conn_complete(const uint8_t *p, size_t len, int enhanced)
+{
+	struct hci_conn	*c;
+	struct bdaddr	 addr;
+	uint8_t		 status;
+
+	if (len < (enhanced ? 30 : 18))
+		return;
+	status = p[0];
+	memcpy(addr.b, p + 5, 6);
+	if (status != 0) {
+		engine_conn_failed(LINK_LE, &addr, status);
+		return;
+	}
+	c = hci_conn_new(get16(p + 1) & 0x0fff, LINK_LE);
+	c->role = p[3];
+	c->peer_type = p[4] & 1;
+	c->peer = addr;
+	p += enhanced ? 23 : 11;
+	c->le_interval = get16(p);
+	c->le_latency = get16(p + 2);
+	c->le_timeout = get16(p + 4);
+	log_debug("%s: LE connection 0x%04x up, interval %u",
+	    bdaddr_ntoa(&addr), c->handle, c->le_interval);
+	engine_conn_up(c);
+}
+
+static void
+hci_disconn_complete(const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	struct hci_acl	*a, *na;
+	int		*freep;
+
+	if (len < 4 || p[0] != 0)
+		return;
+	if ((c = hci_conn_find(get16(p + 1) & 0x0fff)) == NULL)
+		return;
+	log_debug("%s: connection 0x%04x down, reason 0x%02x",
+	    bdaddr_ntoa(&c->peer), c->handle, p[3]);
+
+	freep = (c->link == LINK_LE && hci.le_acl_num != 0) ?
+	    &hci.le_acl_free : &hci.acl_free;
+	*freep += c->inflight;
+	TAILQ_FOREACH_SAFE(a, &aclq, entry, na) {
+		if (a->conn != c)
+			continue;
+		TAILQ_REMOVE(&aclq, a, entry);
+		free(a);
+	}
+	TAILQ_REMOVE(&hci_conns, c, entry);
+	engine_conn_down(c, p[3]);
+	l2cap_conn_free(c);
+	free(c->rx);
+	free(c);
+	hci_acl_kick();
+}
+
+void
+hci_disconnect(struct hci_conn *c, uint8_t reason)
+{
+	uint8_t	 p[3];
+
+	if (c->disconnecting)
+		return;
+	c->disconnecting = 1;
+	put16(p, c->handle);
+	p[2] = reason;
+	hci_cmd(HCI_CMD_DISCONNECT, p, sizeof(p), NULL, NULL);
+}
+
 void
 hci_start(void)
 {

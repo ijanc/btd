@@ -614,6 +614,98 @@ engine_le_event(uint8_t sub, const uint8_t *p, size_t len)
 	}
 }
 
+static void
+engine_conn_request(const uint8_t *p, size_t len)
+{
+	struct device	*dev;
+	struct bdaddr	 addr;
+	uint8_t		 rsp[7];
+
+	if (len < 10)
+		return;
+	memcpy(addr.b, p, 6);
+	memcpy(rsp, p, 6);
+	dev = device_find(DEV_HEADSET, &addr);
+	if (p[9] != 0x01 || dev == NULL || dev->conn != NULL ||
+	    (busy != NULL && busy != dev)) {
+		log_debug("%s: connection request rejected",
+		    bdaddr_ntoa(&addr));
+		rsp[6] = HCI_ERR_LIMITED_RESOURCES;
+		hci_cmd(HCI_CMD_REJECT_CONN, rsp, 7, NULL, NULL);
+		return;
+	}
+	log_debug("%s: connection request accepted", bdaddr_ntoa(&addr));
+	rsp[6] = 0x01;
+	hci_cmd(HCI_CMD_ACCEPT_CONN, rsp, 7, NULL, NULL);
+}
+
+void
+engine_conn_failed(int link, const struct bdaddr *addr, uint8_t status)
+{
+	struct device	*dev = busy;
+
+	if (dev == NULL || dev->conn != NULL)
+		return;
+	if ((link == LINK_LE) != (dev->kind == DEV_HID))
+		return;
+	if (status != HCI_ERR_PAGE_TIMEOUT && status != HCI_ERR_UNKNOWN_CONN)
+		log_info("%s: connection failed: 0x%02x",
+		    bdaddr_ntoa(&dev->addr), status);
+	device_idle(dev);
+	engine_release(dev);
+}
+
+void
+engine_conn_up(struct hci_conn *c)
+{
+	struct device	*dev;
+
+	if (c->link == LINK_LE)
+		dev = (busy != NULL && busy->kind == DEV_HID) ? busy : NULL;
+	else
+		dev = device_find(DEV_HEADSET, &c->peer);
+	if (dev == NULL || dev->conn != NULL) {
+		if (c->link == LINK_LE)
+			att_new(c, NULL, NULL);
+		log_info("%s: unexpected connection, disconnecting",
+		    bdaddr_ntoa(&c->peer));
+		hci_disconnect(c, HCI_ERR_REMOTE_USER);
+		return;
+	}
+	if (busy == NULL)
+		busy = dev;
+	evtimer_del(&connect_timer);
+	c->dev = dev;
+	dev->conn = c;
+	dev->state = DEV_SECURING;
+	if (c->link == LINK_LE)
+		att_new(c, NULL, NULL);
+	log_info("%s: connected", bdaddr_ntoa(&dev->addr));
+	if (c->link == LINK_LE)
+		smp_le_secure(c);
+	else
+		ssp_secure(c);
+}
+
+void
+engine_conn_down(struct hci_conn *c, uint8_t reason)
+{
+	struct device	*dev = c->dev;
+
+	if (c->smp != NULL)
+		smp_free(c);
+	if (dev == NULL) {
+		if (c->att != NULL)
+			att_free(c->att);
+		return;
+	}
+	log_info("%s: disconnected, reason 0x%02x", bdaddr_ntoa(&dev->addr),
+	    reason);
+	device_down(dev);
+	device_idle(dev);
+	engine_release(dev);
+}
+
 void
 engine_ready(void)
 {
