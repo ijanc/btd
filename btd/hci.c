@@ -578,6 +578,168 @@ hci_disconnect(struct hci_conn *c, uint8_t reason)
 	hci_cmd(HCI_CMD_DISCONNECT, p, sizeof(p), NULL, NULL);
 }
 
+static void
+hci_completed(const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	size_t		 i, n;
+	uint16_t	 cnt;
+
+	if (len < 1 || len < 1 + (size_t)p[0] * 4)
+		return;
+	n = p[0];
+	for (i = 0; i < n; i++) {
+		cnt = get16(p + 1 + i * 4 + 2);
+		if ((c = hci_conn_find(get16(p + 1 + i * 4) & 0x0fff)) == NULL)
+			continue;
+		if (cnt > c->inflight)
+			cnt = c->inflight;
+		c->inflight -= cnt;
+		if (c->link == LINK_LE && hci.le_acl_num != 0)
+			hci.le_acl_free += cnt;
+		else
+			hci.acl_free += cnt;
+	}
+	hci_acl_kick();
+}
+
+static void
+hci_acl_packet(const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	uint16_t	 h, dlen, l2len;
+	int		 pb;
+
+	h = get16(p);
+	dlen = get16(p + 2);
+	pb = (h >> 12) & 3;
+	if ((c = hci_conn_find(h & 0x0fff)) == NULL)
+		return;
+	p += 4;
+
+	if (pb == HCI_PB_CONT) {
+		if (c->rx == NULL || c->rxlen + dlen > c->rxwant) {
+			log_debug("%s: unexpected continuation",
+			    bdaddr_ntoa(&c->peer));
+			free(c->rx);
+			c->rx = NULL;
+			return;
+		}
+		memcpy(c->rx + c->rxlen, p, dlen);
+		c->rxlen += dlen;
+	} else {
+		free(c->rx);
+		c->rx = NULL;
+		if (dlen < 4)
+			return;
+		l2len = get16(p);
+		if (dlen == 4 + l2len) {
+			l2cap_input(c, get16(p + 2), p + 4, l2len);
+			return;
+		}
+		if (dlen > 4 + l2len)
+			return;
+		if ((c->rx = malloc(4 + l2len)) == NULL)
+			fatal(NULL);
+		memcpy(c->rx, p, dlen);
+		c->rxlen = dlen;
+		c->rxwant = 4 + l2len;
+	}
+	if (c->rxlen == c->rxwant) {
+		l2cap_input(c, get16(c->rx + 2), c->rx + 4, c->rxwant - 4);
+		free(c->rx);
+		c->rx = NULL;
+	}
+}
+
+void
+hci_acl_send(struct hci_conn *c, const uint8_t *p, size_t len)
+{
+	struct hci_acl	*a;
+	size_t		 mtu, off, n;
+
+	mtu = (c->link == LINK_LE && hci.le_acl_num != 0) ?
+	    hci.le_acl_len : hci.acl_len;
+	if (mtu == 0)
+		return;
+	for (off = 0; off < len; off += n) {
+		n = len - off;
+		if (n > mtu)
+			n = mtu;
+		if ((a = malloc(sizeof(*a) + 4 + n)) == NULL)
+			fatal(NULL);
+		a->conn = c;
+		a->len = 4 + n;
+		put16(a->data, c->handle |
+		    ((off == 0 ? HCI_PB_START_HOST : HCI_PB_CONT) << 12));
+		put16(a->data + 2, n);
+		memcpy(a->data + 4, p + off, n);
+		TAILQ_INSERT_TAIL(&aclq, a, entry);
+		c->queued++;
+	}
+	hci_acl_kick();
+}
+
+static void
+hci_acl_kick(void)
+{
+	struct hci_acl	*a, *na;
+	int		*freep;
+
+	TAILQ_FOREACH_SAFE(a, &aclq, entry, na) {
+		freep = (a->conn->link == LINK_LE && hci.le_acl_num != 0) ?
+		    &hci.le_acl_free : &hci.acl_free;
+		if (*freep <= 0)
+			continue;
+		(*freep)--;
+		TAILQ_REMOVE(&aclq, a, entry);
+		a->conn->queued--;
+		a->conn->inflight++;
+		hci_trace(">", HCI_PKT_ACL, a->data, a->len);
+		engine_imsg_compose_bus(IMSG_HCI_ACL, a->data, a->len);
+		free(a);
+	}
+}
+
+int
+hci_acl_pending(int link)
+{
+	struct hci_conn	*c;
+	int		 n = 0;
+
+	TAILQ_FOREACH(c, &hci_conns, entry)
+		if (c->link == link)
+			n += c->queued + c->inflight;
+	return (n);
+}
+
+enum {
+	I_RESET,
+	I_COMMANDS,
+	I_VERSION,
+	I_LE_FEATURES,
+	I_EXT_FEATURES,
+	I_EVENT_MASK,
+	I_LE_EVENT_MASK,
+	I_BUFFER_SIZE,
+	I_LE_BUFFER_SIZE,
+	I_DATA_LEN_READ,
+	I_DATA_LEN_WRITE,
+	I_ADV_SETS,
+	I_ADV_DATA_LEN,
+	I_BDADDR,
+	I_LE_HOST,
+	I_RANDOM_ADDR,
+	I_LOCAL_NAME,
+	I_CLASS,
+	I_SSP_MODE,
+	I_SC_HOST,
+	I_SCAN_ENABLE,
+	I_PAGE_SCAN_TYPE,
+	I_INQUIRY_SCAN_TYPE,
+	I_DONE
+};
+
 void
 hci_start(void)
 {
