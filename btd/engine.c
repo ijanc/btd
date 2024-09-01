@@ -639,6 +639,48 @@ engine_conn_request(const uint8_t *p, size_t len)
 	hci_cmd(HCI_CMD_ACCEPT_CONN, rsp, 7, NULL, NULL);
 }
 
+static void
+engine_connect(struct device *dev, const struct bdaddr *addr, uint8_t type)
+{
+	struct timeval	 tv = { DEV_LE_CONNECT_TIMEOUT, 0 };
+
+	busy = dev;
+	dev->state = DEV_CONNECTING;
+	hci_scan(0);
+	if (dev->kind == DEV_HEADSET) {
+		log_debug("%s: paging", bdaddr_ntoa(&dev->addr));
+		hci_br_connect(addr);
+		return;
+	}
+	log_debug("%s: connecting to %s (%s)", bdaddr_ntoa(&dev->addr),
+	    bdaddr_ntoa(addr), type == BDADDR_RANDOM ? "random" : "public");
+	hci_le_connect(addr, type);
+	evtimer_add(&connect_timer, &tv);
+}
+
+static void
+engine_connect_timeout(int fd, short event, void *arg)
+{
+	if (busy == NULL || busy->kind != DEV_HID)
+		return;
+	log_debug("%s: connection timed out", bdaddr_ntoa(&busy->addr));
+	hci_le_connect_cancel();
+}
+
+void
+engine_create_status(void *arg, uint8_t status, const uint8_t *rp,
+    size_t len)
+{
+	struct device	*dev = busy;
+
+	if (status == 0 || dev == NULL)
+		return;
+	log_warnx("%s: connection setup failed: 0x%02x",
+	    bdaddr_ntoa(&dev->addr), status);
+	device_idle(dev);
+	engine_release(dev);
+}
+
 void
 engine_conn_failed(int link, const struct bdaddr *addr, uint8_t status)
 {
@@ -718,3 +760,38 @@ engine_ready(void)
 	engine_schedule();
 }
 
+void
+engine_scan_changed(void)
+{
+	if (hci.scanning != hci.scan_want)
+		return;
+	engine_schedule();
+}
+
+void
+engine_adv_report(const struct bdaddr *addr, uint8_t type, int connectable,
+    int rssi, const uint8_t *data, size_t len)
+{
+	struct device	*dev;
+	struct bond	*b = NULL;
+
+	if (log_getverbose() > 1)
+		log_debug("adv %s (%s)%s rssi %d, %zu bytes", bdaddr_ntoa(addr),
+		    type == BDADDR_RANDOM ? "random" : "public",
+		    connectable ? " connectable" : "", rssi, len);
+	if (busy != NULL || !connectable)
+		return;
+	TAILQ_FOREACH(dev, &devices, entry) {
+		if (dev->kind != DEV_HID || dev->state != DEV_WAIT)
+			continue;
+		if (bdaddr_cmp(&dev->addr, addr) == 0)
+			break;
+		if (type == BDADDR_RANDOM && (addr->b[5] & 0xc0) == 0x40 &&
+		    (b = bond_find(BOND_LE, &dev->addr)) != NULL &&
+		    (b->flags & BOND_F_IRK) && smp_rpa_match(b->irk, addr))
+			break;
+	}
+	if (dev == NULL)
+		return;
+	engine_connect(dev, addr, type);
+}

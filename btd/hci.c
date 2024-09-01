@@ -947,6 +947,161 @@ hci_init_done(void)
 	engine_ready();
 }
 
+void
+hci_scan(int on)
+{
+	uint8_t	 p[13];
+
+	if (hci.state != HCI_S_RUNNING || on == hci.scan_want)
+		return;
+	hci.scan_want = on;
+	if (on) {
+		if (hci.ext_scan) {
+			p[0] = BDADDR_RANDOM;
+			p[1] = 0x00;
+			p[2] = hci.coded_phy ? 0x05 : 0x01;
+			p[3] = 0x01;
+			put16(p + 4, 0x60);
+			put16(p + 6, 0x60);
+			p[8] = 0x01;
+			put16(p + 9, 0x60);
+			put16(p + 11, 0x60);
+			hci_cmd(HCI_CMD_LE_SET_EXT_SCAN_PARAMS, p,
+			    hci.coded_phy ? 13 : 8, NULL, NULL);
+			p[0] = 1;
+			p[1] = 1;
+			put16(p + 2, 0);
+			put16(p + 4, 0);
+			hci_cmd(HCI_CMD_LE_SET_EXT_SCAN_ENABLE, p, 6,
+			    hci_scan_done, NULL);
+		} else {
+			p[0] = 0x01;
+			put16(p + 1, 0x60);
+			put16(p + 3, 0x60);
+			p[5] = BDADDR_RANDOM;
+			p[6] = 0x00;
+			hci_cmd(HCI_CMD_LE_SET_SCAN_PARAMS, p, 7, NULL, NULL);
+			p[0] = 1;
+			p[1] = 1;
+			hci_cmd(HCI_CMD_LE_SET_SCAN_ENABLE, p, 2,
+			    hci_scan_done, NULL);
+		}
+	} else {
+		memset(p, 0, sizeof(p));
+		if (hci.ext_scan)
+			hci_cmd(HCI_CMD_LE_SET_EXT_SCAN_ENABLE, p, 6,
+			    hci_scan_done, NULL);
+		else
+			hci_cmd(HCI_CMD_LE_SET_SCAN_ENABLE, p, 2,
+			    hci_scan_done, NULL);
+	}
+}
+
+static void
+hci_scan_done(void *arg, uint8_t status, const uint8_t *rp, size_t len)
+{
+	if (status != 0)
+		log_warnx("scan %s failed: 0x%02x", hci.scan_want ? "enable" :
+		    "disable", status);
+	else
+		hci.scanning = hci.scan_want;
+	engine_scan_changed();
+}
+
+static void
+hci_adv_report(const uint8_t *p, size_t len)
+{
+	struct bdaddr	 addr;
+	size_t		 off = 1, dlen;
+	int		 i, n;
+
+	if (len < 1)
+		return;
+	n = p[0];
+	for (i = 0; i < n; i++) {
+		if (off + 9 > len)
+			return;
+		memcpy(addr.b, p + off + 2, 6);
+		dlen = p[off + 8];
+		if (off + 9 + dlen + 1 > len)
+			return;
+		engine_adv_report(&addr, p[off + 1] & 1, p[off] < 2,
+		    (int8_t)p[off + 9 + dlen], p + off + 9, dlen);
+		off += 9 + dlen + 1;
+	}
+}
+
+static void
+hci_ext_adv_report(const uint8_t *p, size_t len)
+{
+	struct bdaddr	 addr;
+	size_t		 off = 1, dlen;
+	uint16_t	 type;
+	int		 i, n;
+
+	if (len < 1)
+		return;
+	n = p[0];
+	for (i = 0; i < n; i++) {
+		if (off + 24 > len)
+			return;
+		type = get16(p + off);
+		memcpy(addr.b, p + off + 3, 6);
+		dlen = p[off + 23];
+		if (off + 24 + dlen > len)
+			return;
+		engine_adv_report(&addr, p[off + 2] & 1, type & 0x01,
+		    (int8_t)p[off + 13], p + off + 24, dlen);
+		off += 24 + dlen;
+	}
+}
+
+void
+hci_le_connect(const struct bdaddr *addr, uint8_t type)
+{
+	uint8_t	 p[42];
+
+	if (hci.ext_scan) {
+		memset(p, 0, sizeof(p));
+		p[0] = 0x00;
+		p[1] = BDADDR_RANDOM;
+		p[2] = type;
+		memcpy(p + 3, addr->b, 6);
+		p[9] = 0x01;
+		put16(p + 10, 0x60);
+		put16(p + 12, 0x60);
+		put16(p + 14, 0x0c);
+		put16(p + 16, 0x18);
+		put16(p + 18, 0);
+		put16(p + 20, 0x48);
+		put16(p + 22, 0);
+		put16(p + 24, 0);
+		hci_cmd(HCI_CMD_LE_EXT_CREATE_CONN, p, 26, engine_create_status,
+		    NULL);
+	} else {
+		put16(p, 0x60);
+		put16(p + 2, 0x60);
+		p[4] = 0x00;
+		p[5] = type;
+		memcpy(p + 6, addr->b, 6);
+		p[12] = BDADDR_RANDOM;
+		put16(p + 13, 0x0c);
+		put16(p + 15, 0x18);
+		put16(p + 17, 0);
+		put16(p + 19, 0x48);
+		put16(p + 21, 0);
+		put16(p + 23, 0);
+		hci_cmd(HCI_CMD_LE_CREATE_CONN, p, 25, engine_create_status,
+		    NULL);
+	}
+}
+
+void
+hci_le_connect_cancel(void)
+{
+	hci_cmd(HCI_CMD_LE_CREATE_CONN_CANCEL, NULL, 0, NULL, NULL);
+}
+
 uint16_t
 get16(const uint8_t *p)
 {
