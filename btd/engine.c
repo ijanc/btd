@@ -639,6 +639,49 @@ engine_conn_request(const uint8_t *p, size_t len)
 	hci_cmd(HCI_CMD_ACCEPT_CONN, rsp, 7, NULL, NULL);
 }
 
+void
+engine_show_controller(pid_t pid)
+{
+	struct ctl_controller	 cc;
+	struct hci_conn		*c;
+
+	memset(&cc, 0, sizeof(cc));
+	switch (hci.state) {
+	case HCI_S_DOWN:
+		strlcpy(cc.state, "down", sizeof(cc.state));
+		break;
+	case HCI_S_INIT:
+		strlcpy(cc.state, "initializing", sizeof(cc.state));
+		break;
+	case HCI_S_FIRMWARE:
+		strlcpy(cc.state, "loading firmware", sizeof(cc.state));
+		break;
+	case HCI_S_RUNNING:
+		strlcpy(cc.state, "running", sizeof(cc.state));
+		break;
+	}
+	cc.public = hci.bdaddr;
+	cc.random = hci.random;
+	cc.manufacturer = hci.manufacturer;
+	cc.hci_ver = hci.hci_ver;
+	cc.hci_rev = hci.hci_rev;
+	cc.lmp_ver = hci.lmp_ver;
+	cc.lmp_subver = hci.lmp_subver;
+	cc.fw_version = hci.fw_version;
+	cc.acl_len = hci.acl_len;
+	cc.acl_num = hci.acl_num;
+	cc.le_acl_len = hci.le_acl_len;
+	cc.le_acl_num = hci.le_acl_num;
+	cc.acl_free = hci.acl_free;
+	cc.le_acl_free = hci.le_acl_free;
+	cc.scanning = hci.scanning;
+	TAILQ_FOREACH(c, &hci_conns, entry)
+		cc.conns++;
+	engine_imsg_compose_frontend(IMSG_CTL_CONTROLLER, pid, &cc,
+	    sizeof(cc));
+	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
+}
+
 static void
 engine_connect(struct device *dev, const struct bdaddr *addr, uint8_t type)
 {

@@ -123,8 +123,69 @@ struct btd_conf {
 #define	BOND_F_IRK	0x04
 #define	BOND_F_LTK	0x08
 
+struct ctl_controller {
+	char			 state[32];
+	struct bdaddr		 public;
+	struct bdaddr		 random;
+	uint16_t		 manufacturer;
+	uint8_t			 hci_ver;
+	uint16_t		 hci_rev;
+	uint8_t			 lmp_ver;
+	uint16_t		 lmp_subver;
+	uint32_t		 fw_version;
+	uint16_t		 acl_len;
+	uint16_t		 acl_num;
+	uint16_t		 le_acl_len;
+	uint16_t		 le_acl_num;
+	int			 acl_free;
+	int			 le_acl_free;
+	int			 scanning;
+	int			 conns;
+};
+
+#define	CTL_DEV_HID	1
+#define	CTL_DEV_HEADSET	2
+
+struct ctl_device {
+	int			 kind;
+	struct bdaddr		 addr;
+	struct bdaddr		 peer;
+	uint8_t			 peer_type;
+	char			 state[32];
+	int			 bonded;
+	int			 encrypted;
+	int			 authenticated;
+	int			 sc;
+	int			 passkey;
+	uint16_t		 handle;
+	char			 info[128];
+};
+
+struct ctl_bond {
+	int			 type;
+	struct bdaddr		 addr;
+	uint8_t			 addr_type;
+	uint8_t			 flags;
+	uint8_t			 linkkey_type;
+};
+
+#define	SBC_MODE_MONO		0
+#define	SBC_MODE_DUAL		1
+#define	SBC_MODE_STEREO		2
+#define	SBC_MODE_JOINT		3
+
+#define	SBC_ALLOC_LOUDNESS	0
+#define	SBC_ALLOC_SNR		1
+
 /* bus.c */
 void		 bus(int, int);
+
+/* control.c */
+int		 control_init(char *);
+int		 control_listen(int);
+void		 control_accept(int, short, void *);
+void		 control_dispatch_imsg(int, short, void *);
+int		 control_imsg_relay(struct imsg *);
 
 /* frontend.c */
 void		 frontend(int, int);
