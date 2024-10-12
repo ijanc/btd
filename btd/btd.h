@@ -537,6 +537,18 @@ void		 put64(uint8_t *, uint64_t);
 int		 rtk_needed(void);
 void		 rtk_load(void);
 
+/* l2cap.c */
+void		 l2cap_register(const struct l2cap_proto *);
+void		 l2cap_input(struct hci_conn *, uint16_t, const uint8_t *,
+		     size_t);
+void		 l2cap_send_fixed(struct hci_conn *, uint16_t,
+		     const uint8_t *, size_t);
+int		 l2cap_send(struct l2cap_chan *, const uint8_t *, size_t);
+struct l2cap_chan *l2cap_connect(struct hci_conn *, uint16_t,
+		     const struct l2cap_proto *, void *);
+void		 l2cap_close(struct l2cap_chan *);
+void		 l2cap_conn_free(struct hci_conn *);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,
