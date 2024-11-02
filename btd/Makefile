@@ -1,6 +1,6 @@
 PROG=	btd
 SRCS=	btd.c bus.c engine.c frontend.c control.c parse.y printconf.c log.c
-SRCS+=	hci.c rtk.c l2cap.c
+SRCS+=	hci.c rtk.c l2cap.c crypto.c
 
 MAN=
 

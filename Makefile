@@ -1,3 +1,3 @@
-SUBDIR=		btd btctl
+SUBDIR=		btd btctl regress
 
 .include <bsd.subdir.mk>

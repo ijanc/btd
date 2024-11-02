@@ -549,6 +549,31 @@ struct l2cap_chan *l2cap_connect(struct hci_conn *, uint16_t,
 void		 l2cap_close(struct l2cap_chan *);
 void		 l2cap_conn_free(struct hci_conn *);
 
+/* crypto.c */
+int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
+int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
+		     uint8_t[16]);
+int		 crypto_ah(const uint8_t[16], const uint8_t[3], uint8_t[3]);
+int		 crypto_c1(const uint8_t[16], const uint8_t[16],
+		     const uint8_t[7], const uint8_t[7], uint8_t,
+		     const uint8_t[6], uint8_t, const uint8_t[6], uint8_t[16]);
+int		 crypto_s1(const uint8_t[16], const uint8_t[16],
+		     const uint8_t[16], uint8_t[16]);
+int		 crypto_f4(const uint8_t[32], const uint8_t[32],
+		     const uint8_t[16], uint8_t, uint8_t[16]);
+int		 crypto_f5(const uint8_t[32], const uint8_t[16],
+		     const uint8_t[16], const uint8_t[7], const uint8_t[7],
+		     uint8_t[16], uint8_t[16]);
+int		 crypto_f6(const uint8_t[16], const uint8_t[16],
+		     const uint8_t[16], const uint8_t[16], const uint8_t[3],
+		     const uint8_t[7], const uint8_t[7], uint8_t[16]);
+int		 crypto_g2(const uint8_t[32], const uint8_t[32],
+		     const uint8_t[16], const uint8_t[16], uint32_t *);
+int		 crypto_h6(const uint8_t[16], const uint8_t[4], uint8_t[16]);
+void		*crypto_ecdh_new(uint8_t[64]);
+int		 crypto_ecdh_shared(void *, const uint8_t[64], uint8_t[32]);
+void		 crypto_ecdh_free(void *);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,
