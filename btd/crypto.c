@@ -235,3 +235,88 @@ crypto_h6(const uint8_t w[16], const uint8_t keyid[4], uint8_t res[16])
 	return (cmac(w, keyid, 4, res));
 }
 
+void *
+crypto_ecdh_new(uint8_t pub[64])
+{
+	EC_KEY		*key;
+	const EC_POINT	*point;
+	BIGNUM		*x = NULL, *y = NULL;
+	uint8_t		 buf[32];
+	int		 ok = 0;
+
+	if ((key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1)) == NULL)
+		return (NULL);
+	if (EC_KEY_generate_key(key) != 1)
+		goto done;
+	if ((point = EC_KEY_get0_public_key(key)) == NULL)
+		goto done;
+	if ((x = BN_new()) == NULL || (y = BN_new()) == NULL)
+		goto done;
+	if (EC_POINT_get_affine_coordinates(EC_KEY_get0_group(key), point, x,
+	    y, NULL) != 1)
+		goto done;
+	if (BN_bn2binpad(x, buf, 32) != 32)
+		goto done;
+	swap(buf, pub, 32);
+	if (BN_bn2binpad(y, buf, 32) != 32)
+		goto done;
+	swap(buf, pub + 32, 32);
+	ok = 1;
+ done:
+	BN_free(x);
+	BN_free(y);
+	if (!ok) {
+		EC_KEY_free(key);
+		return (NULL);
+	}
+	return (key);
+}
+
+int
+crypto_ecdh_shared(void *ctx, const uint8_t peer[64], uint8_t dhkey[32])
+{
+	EC_KEY		*key = ctx;
+	const EC_GROUP	*group = EC_KEY_get0_group(key);
+	EC_POINT	*point = NULL, *shared = NULL;
+	BIGNUM		*x = NULL, *y = NULL;
+	uint8_t		 buf[32];
+	int		 ret = -1;
+
+	if ((x = BN_new()) == NULL || (y = BN_new()) == NULL)
+		goto done;
+	swap(peer, buf, 32);
+	if (BN_bin2bn(buf, 32, x) == NULL)
+		goto done;
+	swap(peer + 32, buf, 32);
+	if (BN_bin2bn(buf, 32, y) == NULL)
+		goto done;
+	if ((point = EC_POINT_new(group)) == NULL ||
+	    (shared = EC_POINT_new(group)) == NULL)
+		goto done;
+	if (EC_POINT_set_affine_coordinates(group, point, x, y, NULL) != 1)
+		goto done;
+	if (EC_POINT_is_on_curve(group, point, NULL) != 1)
+		goto done;
+	if (EC_POINT_mul(group, shared, NULL, point,
+	    EC_KEY_get0_private_key(key), NULL) != 1)
+		goto done;
+	if (EC_POINT_get_affine_coordinates(group, shared, x, NULL, NULL) != 1)
+		goto done;
+	if (BN_bn2binpad(x, buf, 32) != 32)
+		goto done;
+	swap(buf, dhkey, 32);
+	ret = 0;
+ done:
+	explicit_bzero(buf, sizeof(buf));
+	EC_POINT_free(point);
+	EC_POINT_free(shared);
+	BN_free(x);
+	BN_free(y);
+	return (ret);
+}
+
+void
+crypto_ecdh_free(void *ctx)
+{
+	EC_KEY_free(ctx);
+}
