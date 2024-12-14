@@ -549,6 +549,18 @@ struct l2cap_chan *l2cap_connect(struct hci_conn *, uint16_t,
 void		 l2cap_close(struct l2cap_chan *);
 void		 l2cap_conn_free(struct hci_conn *);
 
+/* smp.c */
+int		 smp_rpa_match(const uint8_t[16], const struct bdaddr *);
+void		 smp_le_secure(struct hci_conn *);
+void		 smp_input(struct hci_conn *, const uint8_t *, size_t);
+void		 smp_encryption_changed(struct hci_conn *, uint8_t, int);
+void		 smp_free(struct hci_conn *);
+int		 smp_authenticated(struct hci_conn *);
+int		 smp_sc(struct hci_conn *);
+void		 ssp_secure(struct hci_conn *);
+void		 ssp_event(uint8_t, const uint8_t *, size_t);
+void		 ssp_encryption_changed(struct hci_conn *, uint8_t, int);
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
