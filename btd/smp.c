@@ -220,6 +220,95 @@ smp_fail(struct smp *smp, uint8_t reason)
 	engine_secured(smp->conn, 0);
 }
 
+void
+smp_le_secure(struct hci_conn *c)
+{
+	struct smp	*smp = smp_get(c);
+	struct bond	*b;
+
+	b = c->dev != NULL ? bond_find(BOND_LE, &c->dev->addr) : NULL;
+	if (b != NULL && (b->flags & BOND_F_LTK)) {
+		smp->bonded = 1;
+		smp->state = SMP_S_ENCRYPTING;
+		smp_start_encryption(smp, b->ltk, b->ediv, b->rand);
+		return;
+	}
+	smp_pair(smp);
+}
+
+static void
+smp_start_encryption(struct smp *smp, const uint8_t *ltk, uint16_t ediv,
+    uint64_t rand)
+{
+	uint8_t	 p[28];
+
+	put16(p, smp->conn->handle);
+	put64(p + 2, rand);
+	put16(p + 10, ediv);
+	memcpy(p + 12, ltk, 16);
+	hci_cmd(HCI_CMD_LE_START_ENCRYPTION, p, sizeof(p), smp_enc_status,
+	    (void *)(uintptr_t)smp->conn->handle);
+	explicit_bzero(p, sizeof(p));
+	smp_timer(smp);
+}
+
+static void
+smp_enc_status(void *arg, uint8_t status, const uint8_t *rp, size_t len)
+{
+	struct hci_conn	*c;
+
+	if (status == 0 ||
+	    (c = hci_conn_find((uintptr_t)arg)) == NULL || c->smp == NULL)
+		return;
+	log_warnx("%s: start encryption failed: 0x%02x",
+	    bdaddr_ntoa(&c->peer), status);
+	evtimer_del(&c->smp->timer);
+	c->smp->state = SMP_S_IDLE;
+	engine_secured(c, 0);
+}
+
+void
+smp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
+{
+	struct smp	*smp = c->smp;
+	struct bond	*b;
+
+	if (smp == NULL)
+		return;
+	switch (smp->state) {
+	case SMP_S_ENCRYPTING:
+		evtimer_del(&smp->timer);
+		if (status != 0 || !on) {
+			log_warnx("%s: encryption with stored key failed: "
+			    "0x%02x", bdaddr_ntoa(&c->peer), status);
+			if (status == HCI_ERR_KEY_MISSING && c->dev != NULL &&
+			    (b = bond_find(BOND_LE, &c->dev->addr)) != NULL) {
+				log_warnx("%s: peer lost the bond, removing it",
+				    bdaddr_ntoa(&c->dev->addr));
+				bond_delete(b);
+			}
+			smp->state = SMP_S_IDLE;
+			engine_secured(c, 0);
+			return;
+		}
+		smp->state = SMP_S_DONE;
+		engine_secured(c, 1);
+		break;
+	case SMP_S_WAIT_ENCRYPTION:
+		if (status != 0 || !on) {
+			smp_fail(smp, SMP_ERR_UNSPECIFIED);
+			return;
+		}
+		smp->state = SMP_S_WAIT_KEYS;
+		smp_timer(smp);
+		if (smp->dist_resp == 0)
+			smp_finish(smp);
+		break;
+	default:
+		break;
+	}
+}
+
 static void
 smp_pair(struct smp *smp)
 {
@@ -564,5 +653,33 @@ smp_finish(struct smp *smp)
 	    smp->method == SMP_PASSKEY ? "passkey, authenticated" :
 	    "just works");
 	engine_secured(c, 1);
+}
+
+int
+smp_authenticated(struct hci_conn *c)
+{
+	struct bond	*b;
+
+	if (c->dev == NULL ||
+	    (b = bond_find(c->link == LINK_LE ? BOND_LE : BOND_BR,
+	    &c->dev->addr)) == NULL)
+		return (0);
+	if (c->link == LINK_LE)
+		return ((b->flags & BOND_F_AUTH) != 0);
+	return (b->linkkey_type == 5 || b->linkkey_type == 8);
+}
+
+int
+smp_sc(struct hci_conn *c)
+{
+	struct bond	*b;
+
+	if (c->dev == NULL ||
+	    (b = bond_find(c->link == LINK_LE ? BOND_LE : BOND_BR,
+	    &c->dev->addr)) == NULL)
+		return (0);
+	if (c->link == LINK_LE)
+		return ((b->flags & BOND_F_SC) != 0);
+	return (b->linkkey_type == 7 || b->linkkey_type == 8);
 }
 

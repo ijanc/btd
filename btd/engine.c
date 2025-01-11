@@ -639,6 +639,26 @@ engine_conn_request(const uint8_t *p, size_t len)
 	hci_cmd(HCI_CMD_ACCEPT_CONN, rsp, 7, NULL, NULL);
 }
 
+static void
+engine_encryption(const uint8_t *p, size_t len, int refresh)
+{
+	struct hci_conn	*c;
+	int		 on;
+
+	if (len < 3 || (c = hci_conn_find(get16(p + 1) & 0x0fff)) == NULL)
+		return;
+	if (refresh)
+		on = p[0] == 0;
+	else
+		on = len >= 4 && p[3] != 0;
+	if (p[0] == 0)
+		c->encrypted = on;
+	if (c->link == LINK_LE)
+		smp_encryption_changed(c, p[0], on);
+	else
+		ssp_encryption_changed(c, p[0], on);
+}
+
 void
 engine_show_controller(pid_t pid)
 {
@@ -789,6 +809,28 @@ engine_conn_down(struct hci_conn *c, uint8_t reason)
 	device_down(dev);
 	device_idle(dev);
 	engine_release(dev);
+}
+
+void
+engine_secured(struct hci_conn *c, int ok)
+{
+	struct device	*dev = c->dev;
+
+	if (dev == NULL)
+		return;
+	if (!ok) {
+		log_warnx("%s: securing the link failed",
+		    bdaddr_ntoa(&dev->addr));
+		hci_disconnect(c, HCI_ERR_AUTH_FAILURE);
+		return;
+	}
+	log_info("%s: encrypted", bdaddr_ntoa(&dev->addr));
+	dev->state = DEV_SETUP;
+	engine_release(dev);
+	if (dev->kind == DEV_HID)
+		hogp_start(dev);
+	else
+		a2dp_start(dev);
 }
 
 void
