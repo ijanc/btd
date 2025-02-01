@@ -123,6 +123,28 @@ struct btd_conf {
 #define	BOND_F_IRK	0x04
 #define	BOND_F_LTK	0x08
 
+struct bond {
+	TAILQ_ENTRY(bond)	 entry;
+	int			 type;
+	struct bdaddr		 addr;
+	uint8_t			 addr_type;
+	uint8_t			 flags;
+	uint8_t			 ltk[16];
+	uint16_t		 ediv;
+	uint64_t		 rand;
+	uint8_t			 keysize;
+	uint8_t			 irk[16];
+	uint8_t			 linkkey[16];
+	uint8_t			 linkkey_type;
+};
+
+TAILQ_HEAD(bond_list, bond);
+
+struct bond_local {
+	struct bdaddr		 addr;
+	uint8_t			 irk[16];
+};
+
 struct ctl_controller {
 	char			 state[32];
 	struct bdaddr		 public;
@@ -191,6 +213,15 @@ int		 control_imsg_relay(struct imsg *);
 void		 frontend(int, int);
 int		 frontend_imsg_compose_main(int, pid_t, void *, uint16_t);
 int		 frontend_imsg_compose_engine(int, pid_t, void *, uint16_t);
+
+/* bond.c */
+int		 bond_read(const char *, struct bond_list *,
+		     struct bond_local *);
+int		 bond_write(const char *, struct bond_list *,
+		     struct bond_local *);
+struct bond	*bond_find(int, const struct bdaddr *);
+void		 bond_store(struct bond *);
+void		 bond_delete(struct bond *);
 
 /* engine */
 

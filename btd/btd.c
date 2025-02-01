@@ -677,6 +677,20 @@ main_send_config(struct imsgev *iev, struct btd_conf *xconf)
 }
 
 void
+main_send_bonds(void)
+{
+	struct bond	*b;
+
+	if (have_local)
+		imsg_compose_event(iev_engine, IMSG_BOND_LOCAL, 0, 0, -1,
+		    &bond_local, sizeof(bond_local));
+	TAILQ_FOREACH(b, &bonds, entry)
+		imsg_compose_event(iev_engine, IMSG_BOND, 0, 0, -1, b,
+		    sizeof(*b));
+	imsg_compose_event(iev_engine, IMSG_BONDS_END, 0, 0, -1, NULL, 0);
+}
+
+void
 main_send_firmware(const char *name)
 {
 	char	 path[PATH_MAX];
@@ -725,6 +739,53 @@ main_send_file(const char *path, enum imsg_type type)
 	}
 	free(buf);
 	log_debug("%s: %lld bytes", path, (long long)st.st_size);
+}
+
+void
+main_bond_save(struct bond *nb)
+{
+	struct bond	*b;
+
+	TAILQ_FOREACH(b, &bonds, entry)
+		if (b->type == nb->type && bdaddr_cmp(&b->addr, &nb->addr) == 0)
+			break;
+	if (b == NULL) {
+		if ((b = calloc(1, sizeof(*b))) == NULL)
+			fatal(NULL);
+		TAILQ_INSERT_TAIL(&bonds, b, entry);
+	}
+	nb->entry = b->entry;
+	*b = *nb;
+	if (bond_write(_PATH_BONDS, &bonds, have_local ? &bond_local : NULL)
+	    == -1)
+		log_warnx("could not save bonds");
+}
+
+void
+main_bond_delete(struct bond *ob)
+{
+	struct bond	*b;
+
+	TAILQ_FOREACH(b, &bonds, entry)
+		if (b->type == ob->type && bdaddr_cmp(&b->addr, &ob->addr) == 0)
+			break;
+	if (b == NULL)
+		return;
+	TAILQ_REMOVE(&bonds, b, entry);
+	explicit_bzero(b, sizeof(*b));
+	free(b);
+	if (bond_write(_PATH_BONDS, &bonds, have_local ? &bond_local : NULL)
+	    == -1)
+		log_warnx("could not save bonds");
+}
+
+void
+main_bond_local_save(struct bond_local *local)
+{
+	bond_local = *local;
+	have_local = 1;
+	if (bond_write(_PATH_BONDS, &bonds, &bond_local) == -1)
+		log_warnx("could not save bonds");
 }
 
 int

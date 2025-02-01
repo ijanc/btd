@@ -702,6 +702,25 @@ engine_show_controller(pid_t pid)
 	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
 }
 
+void
+engine_show_bonds(pid_t pid)
+{
+	struct ctl_bond	 cb;
+	struct bond	*b;
+
+	TAILQ_FOREACH(b, &engine_state.bonds, entry) {
+		memset(&cb, 0, sizeof(cb));
+		cb.type = b->type;
+		cb.addr = b->addr;
+		cb.addr_type = b->addr_type;
+		cb.flags = b->flags;
+		cb.linkkey_type = b->linkkey_type;
+		engine_imsg_compose_frontend(IMSG_CTL_BOND, pid, &cb,
+		    sizeof(cb));
+	}
+	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
+}
+
 static void
 engine_connect(struct device *dev, const struct bdaddr *addr, uint8_t type)
 {
