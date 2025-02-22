@@ -592,6 +592,15 @@ void		 ssp_secure(struct hci_conn *);
 void		 ssp_event(uint8_t, const uint8_t *, size_t);
 void		 ssp_encryption_changed(struct hci_conn *, uint8_t, int);
 
+/* att.c */
+struct att	*att_new(struct hci_conn *, att_notify_cb, void *);
+void		 att_set_notify(struct att *, att_notify_cb, void *);
+void		 att_free(struct att *);
+uint16_t	 att_mtu(struct att *);
+void		 att_request(struct att *, const uint8_t *, size_t, att_cb,
+		     void *);
+void		 att_input(struct hci_conn *, const uint8_t *, size_t);
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
