@@ -601,6 +601,10 @@ void		 att_request(struct att *, const uint8_t *, size_t, att_cb,
 		     void *);
 void		 att_input(struct hci_conn *, const uint8_t *, size_t);
 
+/* hogp.c */
+void		 hogp_start(struct device *);
+void		 hogp_down(struct device *);
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
