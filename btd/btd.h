@@ -605,6 +605,13 @@ void		 att_input(struct hci_conn *, const uint8_t *, size_t);
 void		 hogp_start(struct device *);
 void		 hogp_down(struct device *);
 
+/* hid.c */
+struct hid	*hid_new(uint8_t *, size_t, int);
+void		 hid_free(struct hid *);
+const char	*hid_describe(struct hid *);
+void		 hid_report(struct hid *, uint8_t, const uint8_t *, size_t);
+void		 hid_reset(struct hid *);
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,

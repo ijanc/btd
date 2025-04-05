@@ -1,3 +1,3 @@
-SUBDIR=	crypto
+SUBDIR=	crypto hid
 
 .include <bsd.subdir.mk>
