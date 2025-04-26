@@ -323,3 +323,106 @@ hogp_map(void *arg, uint8_t err, const uint8_t *p, size_t len)
 	hogp_read_refs(hogp);
 }
 
+static void
+hogp_read_refs(struct hogp *hogp)
+{
+	uint8_t	 p[3];
+
+	while (++hogp->idx < hogp->nreports) {
+		if (hogp->reports[hogp->idx].ref == 0)
+			continue;
+		p[0] = ATT_OP_READ_REQ;
+		put16(p + 1, hogp->reports[hogp->idx].ref);
+		att_request(hogp->att, p, sizeof(p), hogp_ref, hogp);
+		return;
+	}
+	if ((hogp->hid = hid_new(hogp->map, hogp->maplen,
+	    engine_state.kbdtype)) == NULL) {
+		hogp_fail(hogp, "cannot parse report map");
+		return;
+	}
+	hogp->idx = -1;
+	hogp_subscribe(hogp);
+}
+
+static void
+hogp_ref(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp		*hogp = arg;
+	struct hogp_report	*r = &hogp->reports[hogp->idx];
+
+	if (err == 0 && len >= 2) {
+		r->id = p[0];
+		r->type = p[1];
+		log_debug("%s: report handle 0x%04x id %u type %u",
+		    bdaddr_ntoa(&hogp->dev->addr), r->value, r->id, r->type);
+	}
+	hogp_read_refs(hogp);
+}
+
+static void
+hogp_subscribe(struct hogp *hogp)
+{
+	struct hogp_report	*r;
+	uint8_t			 p[5];
+
+	while (++hogp->idx < hogp->nreports) {
+		r = &hogp->reports[hogp->idx];
+		if (r->type != REPORT_INPUT || r->cccd == 0)
+			continue;
+		p[0] = ATT_OP_WRITE_REQ;
+		put16(p + 1, r->cccd);
+		put16(p + 3, 0x0001);
+		att_request(hogp->att, p, sizeof(p), hogp_subscribed, hogp);
+		return;
+	}
+	hogp_ready(hogp);
+}
+
+static void
+hogp_subscribed(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+
+	if (err != 0)
+		log_warnx("%s: cannot subscribe to report %u: 0x%02x",
+		    bdaddr_ntoa(&hogp->dev->addr),
+		    hogp->reports[hogp->idx].id, err);
+	hogp_subscribe(hogp);
+}
+
+static void
+hogp_ready(struct hogp *hogp)
+{
+	struct device	*dev = hogp->dev;
+	int		 i, n = 0;
+
+	for (i = 0; i < hogp->nreports; i++)
+		if (hogp->reports[i].type == REPORT_INPUT)
+			n++;
+	hogp->ready = 1;
+	snprintf(dev->info, sizeof(dev->info), "%d input report%s, %s", n,
+	    n == 1 ? "" : "s", hid_describe(hogp->hid));
+	log_info("%s: ready, %s", bdaddr_ntoa(&dev->addr), dev->info);
+	device_state(dev, DEV_READY);
+}
+
+static void
+hogp_notify(void *arg, uint16_t handle, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+	int		 i;
+
+	if (hogp == NULL || !hogp->ready)
+		return;
+	for (i = 0; i < hogp->nreports; i++) {
+		if (hogp->reports[i].value != handle)
+			continue;
+		if (log_getverbose() > 2)
+			log_debug("%s: report %u, %zu bytes",
+			    bdaddr_ntoa(&hogp->dev->addr),
+			    hogp->reports[i].id, len);
+		hid_report(hogp->hid, hogp->reports[i].id, p, len);
+		return;
+	}
+}

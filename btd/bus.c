@@ -445,3 +445,30 @@ bus_write_acl(uint8_t *p, size_t len)
 		log_warnx("acl write: short write");
 }
 
+void
+bus_inject(int fd, struct wscons_event *ev, size_t n)
+{
+	size_t	 i;
+
+	for (i = 0; i < n; i++)
+		if (ioctl(fd, WSMUXIO_INJECTEVENT, &ev[i]) == -1 &&
+		    errno != ENOSPC)
+			log_warn("WSMUXIO_INJECTEVENT");
+}
+
+/*
+ * A write-only opener that closes the mouse mux last leaves it busy, so
+ * it is held only for the duration of one report.
+ */
+void
+bus_inject_mouse(struct wscons_event *ev, size_t n)
+{
+	int	 fd;
+
+	if ((fd = open(_PATH_WSMOUSE, O_WRONLY | O_CLOEXEC)) == -1) {
+		log_warn("%s", _PATH_WSMOUSE);
+		return;
+	}
+	bus_inject(fd, ev, n);
+	close(fd);
+}

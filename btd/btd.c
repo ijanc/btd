@@ -833,6 +833,20 @@ open_ep(const char *dev, int ep, int flags)
 	return (fd);
 }
 
+int
+kbd_type(void)
+{
+	u_int	 type;
+	int	 fd;
+
+	if ((fd = open(_PATH_WSKBD, O_WRONLY | O_CLOEXEC)) == -1)
+		return (-1);
+	if (ioctl(fd, WSKBDIO_GTYPE, &type) == -1)
+		type = -1;
+	close(fd);
+	return (type);
+}
+
 void
 imsg_event_add(struct imsgev *iev)
 {
