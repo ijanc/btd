@@ -659,6 +659,49 @@ engine_encryption(const uint8_t *p, size_t len, int refresh)
 		ssp_encryption_changed(c, p[0], on);
 }
 
+static const char *
+device_state_name(int state)
+{
+	switch (state) {
+	case DEV_IDLE:
+		return ("idle");
+	case DEV_WAIT:
+		return ("waiting");
+	case DEV_CONNECTING:
+		return ("connecting");
+	case DEV_SECURING:
+		return ("securing");
+	case DEV_SETUP:
+		return ("setting up");
+	case DEV_READY:
+		return ("ready");
+	}
+	return ("unknown");
+}
+
+static void
+engine_device_ctl(struct device *dev, struct ctl_device *cd)
+{
+	struct hci_conn	*c = dev->conn;
+
+	memset(cd, 0, sizeof(*cd));
+	cd->kind = dev->kind == DEV_HID ? CTL_DEV_HID : CTL_DEV_HEADSET;
+	cd->addr = dev->addr;
+	strlcpy(cd->state, device_state_name(dev->state), sizeof(cd->state));
+	cd->bonded = bond_find(dev->kind == DEV_HID ? BOND_LE : BOND_BR,
+	    &dev->addr) != NULL;
+	cd->passkey = dev->passkey;
+	if (c != NULL) {
+		cd->handle = c->handle;
+		cd->peer = c->peer;
+		cd->peer_type = c->peer_type;
+		cd->encrypted = c->encrypted;
+		cd->authenticated = smp_authenticated(c);
+		cd->sc = smp_sc(c);
+	}
+	strlcpy(cd->info, dev->info, sizeof(cd->info));
+}
+
 void
 engine_show_controller(pid_t pid)
 {
@@ -703,6 +746,20 @@ engine_show_controller(pid_t pid)
 }
 
 void
+engine_show_devices(pid_t pid)
+{
+	struct ctl_device	 cd;
+	struct device		*dev;
+
+	TAILQ_FOREACH(dev, &devices, entry) {
+		engine_device_ctl(dev, &cd);
+		engine_imsg_compose_frontend(IMSG_CTL_DEVICE, pid, &cd,
+		    sizeof(cd));
+	}
+	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
+}
+
+void
 engine_show_bonds(pid_t pid)
 {
 	struct ctl_bond	 cb;
@@ -719,6 +776,156 @@ engine_show_bonds(pid_t pid)
 		    sizeof(cb));
 	}
 	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
+}
+
+struct device *
+device_find(int kind, const struct bdaddr *addr)
+{
+	struct device	*dev;
+
+	TAILQ_FOREACH(dev, &devices, entry)
+		if (dev->kind == kind && bdaddr_cmp(&dev->addr, addr) == 0)
+			return (dev);
+	return (NULL);
+}
+
+static struct device *
+device_new(int kind, const struct bdaddr *addr)
+{
+	struct device	*dev;
+
+	if ((dev = calloc(1, sizeof(*dev))) == NULL)
+		fatal(NULL);
+	dev->kind = kind;
+	dev->addr = *addr;
+	dev->state = DEV_WAIT;
+	dev->passkey = -1;
+	evtimer_set(&dev->retry, device_retry, dev);
+	TAILQ_INSERT_TAIL(&devices, dev, entry);
+	return (dev);
+}
+
+static void
+device_free(struct device *dev)
+{
+	if (busy == dev)
+		busy = NULL;
+	evtimer_del(&dev->retry);
+	TAILQ_REMOVE(&devices, dev, entry);
+	free(dev);
+}
+
+void
+device_reconf(void)
+{
+	struct btd_conf	*conf = engine_state.conf;
+	struct hid_conf	*hid;
+	struct device	*dev, *ndev;
+
+	TAILQ_FOREACH(dev, &devices, entry)
+		dev->removed = 1;
+	TAILQ_FOREACH(hid, &conf->hid_list, entry) {
+		if ((dev = device_find(DEV_HID, &hid->addr)) == NULL)
+			dev = device_new(DEV_HID, &hid->addr);
+		dev->removed = 0;
+	}
+	if (conf->headset != NULL) {
+		if ((dev = device_find(DEV_HEADSET, &conf->headset->addr)) ==
+		    NULL)
+			dev = device_new(DEV_HEADSET, &conf->headset->addr);
+		dev->removed = 0;
+		dev->hs = *conf->headset;
+	}
+	TAILQ_FOREACH_SAFE(dev, &devices, entry, ndev) {
+		if (!dev->removed)
+			continue;
+		if (dev->conn != NULL) {
+			dev->conn->dev = NULL;
+			hci_disconnect(dev->conn, HCI_ERR_REMOTE_USER);
+			device_down(dev);
+		}
+		device_free(dev);
+	}
+	engine_schedule();
+}
+
+void
+device_state(struct device *dev, int state)
+{
+	dev->state = state;
+	if (state == DEV_READY && busy == dev)
+		engine_release(dev);
+}
+
+static void
+device_retry(int fd, short event, void *arg)
+{
+	struct device	*dev = arg;
+
+	if (dev->state == DEV_IDLE)
+		dev->state = DEV_WAIT;
+	engine_schedule();
+}
+
+static void
+device_idle(struct device *dev)
+{
+	struct timeval	 tv;
+
+	dev->state = DEV_IDLE;
+	tv.tv_sec = dev->kind == DEV_HID ? DEV_HID_RETRY : DEV_HEADSET_RETRY;
+	tv.tv_usec = 0;
+	evtimer_add(&dev->retry, &tv);
+}
+
+static void
+device_down(struct device *dev)
+{
+	if (dev->kind == DEV_HID)
+		hogp_down(dev);
+	else
+		a2dp_down(dev);
+	if (dev->conn != NULL && dev->conn->att != NULL)
+		att_free(dev->conn->att);
+	dev->conn = NULL;
+	dev->passkey = -1;
+	dev->info[0] = '\0';
+}
+
+void
+engine_release(struct device *dev)
+{
+	if (busy != dev)
+		return;
+	busy = NULL;
+	evtimer_del(&connect_timer);
+	engine_schedule();
+}
+
+void
+engine_schedule(void)
+{
+	struct device	*dev;
+	int		 want_scan = 0;
+
+	if (hci.state != HCI_S_RUNNING)
+		return;
+	if (busy != NULL) {
+		hci_scan(0);
+		return;
+	}
+	TAILQ_FOREACH(dev, &devices, entry) {
+		if (dev->state != DEV_WAIT)
+			continue;
+		if (dev->kind == DEV_HEADSET &&
+		    hci_conn_find_addr(LINK_BR, &dev->addr) == NULL) {
+			engine_connect(dev, &dev->addr, BDADDR_PUBLIC);
+			return;
+		}
+		if (dev->kind == DEV_HID)
+			want_scan = 1;
+	}
+	hci_scan(want_scan);
 }
 
 static void
