@@ -1102,6 +1102,20 @@ hci_le_connect_cancel(void)
 	hci_cmd(HCI_CMD_LE_CREATE_CONN_CANCEL, NULL, 0, NULL, NULL);
 }
 
+void
+hci_br_connect(const struct bdaddr *addr)
+{
+	uint8_t	 p[13];
+
+	memcpy(p, addr->b, 6);
+	put16(p + 6, 0xcc18);
+	p[8] = 0x02;
+	p[9] = 0x00;
+	put16(p + 10, 0);
+	p[12] = 0x01;
+	hci_cmd(HCI_CMD_CREATE_CONN, p, sizeof(p), engine_create_status, NULL);
+}
+
 uint16_t
 get16(const uint8_t *p)
 {
