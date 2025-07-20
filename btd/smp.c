@@ -683,3 +683,131 @@ smp_sc(struct hci_conn *c)
 	return (b->linkkey_type == 7 || b->linkkey_type == 8);
 }
 
+void
+ssp_secure(struct hci_conn *c)
+{
+	uint8_t	 p[2];
+
+	put16(p, c->handle);
+	hci_cmd(HCI_CMD_AUTH_REQUESTED, p, sizeof(p), ssp_auth_status,
+	    (void *)(uintptr_t)c->handle);
+}
+
+static void
+ssp_auth_status(void *arg, uint8_t status, const uint8_t *rp, size_t len)
+{
+	struct hci_conn	*c;
+
+	if (status == 0 || (c = hci_conn_find((uintptr_t)arg)) == NULL)
+		return;
+	log_warnx("%s: authentication request failed: 0x%02x",
+	    bdaddr_ntoa(&c->peer), status);
+	engine_secured(c, 0);
+}
+
+void
+ssp_event(uint8_t code, const uint8_t *p, size_t len)
+{
+	struct hci_conn	*c;
+	struct bond	*b, nb;
+	struct bdaddr	 addr;
+	uint8_t		 rsp[22];
+
+	switch (code) {
+	case HCI_EVT_LINK_KEY_REQUEST:
+		if (len < 6)
+			return;
+		memcpy(addr.b, p, 6);
+		memcpy(rsp, p, 6);
+		if ((b = bond_find(BOND_BR, &addr)) != NULL) {
+			memcpy(rsp + 6, b->linkkey, 16);
+			hci_cmd(HCI_CMD_LINK_KEY_REPLY, rsp, 22, NULL, NULL);
+			explicit_bzero(rsp, sizeof(rsp));
+		} else
+			hci_cmd(HCI_CMD_LINK_KEY_NEG_REPLY, rsp, 6, NULL,
+			    NULL);
+		break;
+	case HCI_EVT_PIN_CODE_REQUEST:
+		if (len < 6)
+			return;
+		log_warnx("%s: legacy pairing not supported",
+		    bdaddr_ntoa((const struct bdaddr *)p));
+		hci_cmd(HCI_CMD_PIN_CODE_NEG_REPLY, p, 6, NULL, NULL);
+		break;
+	case HCI_EVT_IO_CAP_REQUEST:
+		if (len < 6)
+			return;
+		memcpy(addr.b, p, 6);
+		memcpy(rsp, p, 6);
+		if (device_find(DEV_HEADSET, &addr) == NULL) {
+			rsp[6] = HCI_ERR_PAIRING_NOT_ALLOWED;
+			hci_cmd(HCI_CMD_IO_CAP_NEG_REPLY, rsp, 7, NULL, NULL);
+			break;
+		}
+		log_info("%s: pairing", bdaddr_ntoa(&addr));
+		rsp[6] = SSP_IO_NONE;
+		rsp[7] = 0x00;
+		rsp[8] = SSP_AUTH_GENERAL;
+		hci_cmd(HCI_CMD_IO_CAP_REPLY, rsp, 9, NULL, NULL);
+		break;
+	case HCI_EVT_IO_CAP_RESPONSE:
+		if (len < 9)
+			return;
+		log_debug("%s: peer io capability 0x%02x, authentication "
+		    "0x%02x", bdaddr_ntoa((const struct bdaddr *)p), p[6],
+		    p[8]);
+		break;
+	case HCI_EVT_USER_CONFIRM_REQUEST:
+		if (len < 6)
+			return;
+		hci_cmd(HCI_CMD_USER_CONFIRM_REPLY, p, 6, NULL, NULL);
+		break;
+	case HCI_EVT_SSP_COMPLETE:
+		if (len < 7)
+			return;
+		if (p[0] != 0)
+			log_warnx("%s: pairing failed: 0x%02x",
+			    bdaddr_ntoa((const struct bdaddr *)(p + 1)), p[0]);
+		break;
+	case HCI_EVT_LINK_KEY_NOTIFICATION:
+		if (len < 23)
+			return;
+		memset(&nb, 0, sizeof(nb));
+		nb.type = BOND_BR;
+		memcpy(nb.addr.b, p, 6);
+		memcpy(nb.linkkey, p + 6, 16);
+		nb.linkkey_type = p[22];
+		bond_store(&nb);
+		explicit_bzero(&nb, sizeof(nb));
+		log_info("%s: paired, link key type %u stored",
+		    bdaddr_ntoa((const struct bdaddr *)p), p[22]);
+		break;
+	case HCI_EVT_AUTH_COMPLETE:
+		if (len < 3 || (c = hci_conn_find(get16(p + 1))) == NULL)
+			return;
+		if (p[0] != 0) {
+			log_warnx("%s: authentication failed: 0x%02x",
+			    bdaddr_ntoa(&c->peer), p[0]);
+			if (p[0] == HCI_ERR_KEY_MISSING &&
+			    (b = bond_find(BOND_BR, &c->peer)) != NULL) {
+				log_warnx("%s: peer lost the bond, removing it",
+				    bdaddr_ntoa(&c->peer));
+				bond_delete(b);
+			}
+			engine_secured(c, 0);
+			return;
+		}
+		put16(rsp, c->handle);
+		rsp[2] = 1;
+		hci_cmd(HCI_CMD_SET_CONN_ENCRYPTION, rsp, 3, NULL, NULL);
+		break;
+	}
+}
+
+void
+ssp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
+{
+	if (c->dev == NULL || c->dev->state != DEV_SECURING)
+		return;
+	engine_secured(c, status == 0 && on);
+}
