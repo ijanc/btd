@@ -612,6 +612,11 @@ const char	*hid_describe(struct hid *);
 void		 hid_report(struct hid *, uint8_t, const uint8_t *, size_t);
 void		 hid_reset(struct hid *);
 
+/* sdp.c */
+void		 sdp_init(void);
+void		 sdp_query_avdtp(struct device *, void (*)(struct device *,
+		     int));
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
