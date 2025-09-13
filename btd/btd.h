@@ -199,6 +199,16 @@ struct ctl_bond {
 #define	SBC_ALLOC_LOUDNESS	0
 #define	SBC_ALLOC_SNR		1
 
+struct audio_params {
+	int			 rate;
+	int			 channels;
+	int			 mode;
+	int			 blocks;
+	int			 subbands;
+	int			 alloc;
+	int			 bitpool;
+};
+
 /* bus.c */
 void		 bus(int, int);
 
@@ -641,6 +651,19 @@ int		 crypto_h6(const uint8_t[16], const uint8_t[4], uint8_t[16]);
 void		*crypto_ecdh_new(uint8_t[64]);
 int		 crypto_ecdh_shared(void *, const uint8_t[64], uint8_t[32]);
 void		 crypto_ecdh_free(void *);
+
+/* sbc.c */
+struct sbc {
+	int			 freq;
+	int			 alloc;
+	int			 bitpool;
+	int32_t			 x[2][80];
+};
+
+int		 sbc_init(struct sbc *, const struct audio_params *);
+size_t		 sbc_encode(struct sbc *, const int16_t *, uint8_t *);
+size_t		 sbc_frame_len(const struct sbc *);
+size_t		 sbc_frame_samples(void);
 
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
