@@ -627,6 +627,12 @@ void		 sdp_init(void);
 void		 sdp_query_avdtp(struct device *, void (*)(struct device *,
 		     int));
 
+/* avdtp.c */
+void		 avdtp_init(void);
+void		 a2dp_start(struct device *);
+void		 a2dp_down(struct device *);
+void		 a2dp_info_update(struct device *);
+
 /* crypto.c */
 int		 crypto_e(const uint8_t[16], const uint8_t[16], uint8_t[16]);
 int		 crypto_cmac(const uint8_t[16], const uint8_t *, size_t,
