@@ -671,6 +671,12 @@ size_t		 sbc_encode(struct sbc *, const int16_t *, uint8_t *);
 size_t		 sbc_frame_len(const struct sbc *);
 size_t		 sbc_frame_samples(void);
 
+/* rtp.c */
+void		 rtp_start(struct l2cap_chan *, const struct audio_params *);
+void		 rtp_stop(void);
+void		 rtp_frame(const uint8_t *, size_t);
+int		 rtp_stats(uint64_t *, uint64_t *);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,
