@@ -1,7 +1,7 @@
 PROG=	btd
 SRCS=	btd.c bus.c engine.c frontend.c control.c parse.y printconf.c log.c
 SRCS+=	hci.c rtk.c l2cap.c smp.c crypto.c att.c hogp.c hid.c bond.c
-SRCS+=	sdp.c avdtp.c rtp.c sbc.c
+SRCS+=	sdp.c avdtp.c rtp.c sbc.c audio.c
 
 MAN=
 

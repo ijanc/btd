@@ -224,6 +224,12 @@ void		 frontend(int, int);
 int		 frontend_imsg_compose_main(int, pid_t, void *, uint16_t);
 int		 frontend_imsg_compose_engine(int, pid_t, void *, uint16_t);
 
+/* audio.c */
+void		 audio_init(void);
+void		 audio_start(struct audio_params *);
+void		 audio_stop(void);
+void		 audio_set_volume(int);
+
 /* bond.c */
 int		 bond_read(const char *, struct bond_list *,
 		     struct bond_local *);
