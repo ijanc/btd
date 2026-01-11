@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Murilo Ijanc <murilo@ijanc.org>
+ * Copyright (c) 2024-2026 Murilo Ijanc <murilo@ijanc.org>
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any

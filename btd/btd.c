@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Murilo Ijanc <murilo@ijanc.org>
+ * Copyright (c) 2024-2026 Murilo Ijanc <murilo@ijanc.org>
  * Copyright (c) 2017 Florian Obser <florian@openbsd.org>
  * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
  * Copyright (c) 2004 Esben Norby <norby@openbsd.org>
