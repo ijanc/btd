@@ -683,6 +683,13 @@ void		 rtp_stop(void);
 void		 rtp_frame(const uint8_t *, size_t);
 int		 rtp_stats(uint64_t *, uint64_t *);
 
+/* avrcp.c */
+void		 avrcp_init(void);
+void		 avrcp_start(struct device *);
+void		 avrcp_down(struct device *);
+int		 avrcp_volume(struct device *);
+void		 avrcp_local_volume(int);
+
 /* btd.c */
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,

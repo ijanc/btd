@@ -223,3 +223,135 @@ audio_cb(int fd, short event, void *arg)
 	audio_arm();
 }
 
+void
+audio_set_volume(int v)
+{
+	unsigned int	 val;
+
+	if (volume.hdl == NULL || !volume.have_level || v < 0 || v > 127)
+		return;
+	val = (v * volume.maxval + 63) / 127;
+	volume.sent = v;
+	sioctl_setval(volume.hdl, volume.level_addr, val);
+}
+
+static void
+volume_open(void)
+{
+	struct timeval	 tv = { AUDIO_RETRY, 0 };
+
+	volume.have_level = volume.have_mute = 0;
+	if ((volume.hdl = sioctl_open(AUDIO_CTL, SIOCTL_READ | SIOCTL_WRITE,
+	    1)) == NULL) {
+		evtimer_add(&volume.retry, &tv);
+		return;
+	}
+	if (!sioctl_ondesc(volume.hdl, volume_ondesc, NULL) ||
+	    !sioctl_onval(volume.hdl, volume_onval, NULL)) {
+		volume_close();
+		evtimer_add(&volume.retry, &tv);
+		return;
+	}
+	volume_arm();
+}
+
+static void
+volume_close(void)
+{
+	if (volume.hdl == NULL)
+		return;
+	if (event_initialized(&volume.ev))
+		event_del(&volume.ev);
+	sioctl_close(volume.hdl);
+	volume.hdl = NULL;
+}
+
+static void
+volume_retry(int fd, short event, void *arg)
+{
+	if (volume.hdl == NULL)
+		volume_open();
+}
+
+static void
+volume_arm(void)
+{
+	struct pollfd	 pfd;
+	short		 ev = 0;
+
+	if (sioctl_pollfd(volume.hdl, &pfd, POLLIN) < 1)
+		return;
+	if (pfd.events & POLLIN)
+		ev |= EV_READ;
+	if (pfd.events & POLLOUT)
+		ev |= EV_WRITE;
+	event_set(&volume.ev, pfd.fd, ev, volume_cb, NULL);
+	event_add(&volume.ev, NULL);
+}
+
+static void
+volume_cb(int fd, short event, void *arg)
+{
+	struct timeval	 tv = { AUDIO_RETRY, 0 };
+	struct pollfd	 pfd;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	if (event & EV_READ)
+		pfd.revents |= POLLIN;
+	if (event & EV_WRITE)
+		pfd.revents |= POLLOUT;
+	sioctl_revents(volume.hdl, &pfd);
+	if (sioctl_eof(volume.hdl)) {
+		volume_close();
+		evtimer_add(&volume.retry, &tv);
+		return;
+	}
+	volume_arm();
+}
+
+static void
+volume_ondesc(void *arg, struct sioctl_desc *d, int val)
+{
+	if (d == NULL) {
+		volume_report();
+		return;
+	}
+	if (d->group[0] != '\0' || strcmp(d->node0.name, "output") != 0)
+		return;
+	if (d->type == SIOCTL_NUM && strcmp(d->func, "level") == 0) {
+		volume.level_addr = d->addr;
+		volume.maxval = d->maxval;
+		volume.level = val;
+		volume.have_level = 1;
+	} else if (d->type == SIOCTL_SW && strcmp(d->func, "mute") == 0) {
+		volume.mute_addr = d->addr;
+		volume.mute = val;
+		volume.have_mute = 1;
+	}
+}
+
+static void
+volume_onval(void *arg, unsigned int addr, unsigned int val)
+{
+	if (volume.have_level && addr == volume.level_addr)
+		volume.level = val;
+	else if (volume.have_mute && addr == volume.mute_addr)
+		volume.mute = val;
+	else
+		return;
+	volume_report();
+}
+
+static void
+volume_report(void)
+{
+	int	 v;
+
+	if (!volume.have_level || volume.maxval == 0)
+		return;
+	v = volume.have_mute && volume.mute ? 0 :
+	    (volume.level * 127 + volume.maxval / 2) / volume.maxval;
+	frontend_imsg_compose_engine(IMSG_VOLUME_LOCAL, 0, &v, sizeof(v));
+}
