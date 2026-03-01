@@ -513,6 +513,45 @@ a2dp_stop(struct a2dp *a)
 	evtimer_del(&a->stats);
 }
 
+void
+a2dp_info_update(struct device *dev)
+{
+	if (dev->proto != NULL && dev->kind == DEV_HEADSET)
+		a2dp_info(dev->proto);
+}
+
+static void
+a2dp_info(struct a2dp *a)
+{
+	struct audio_params	*par = &a->params;
+	char			 vol[16] = "";
+	int			 v;
+
+	if (a->state != A2DP_S_STREAMING && a->state != A2DP_S_SUSPENDED)
+		return;
+	if ((v = avrcp_volume(a->dev)) != -1)
+		snprintf(vol, sizeof(vol), ", volume %d", v);
+	snprintf(a->dev->info, sizeof(a->dev->info),
+	    "%s %d Hz, stereo, bitpool %d, %d kb/s%s",
+	    a->state == A2DP_S_STREAMING ? "streaming" : "suspended",
+	    par->rate, par->bitpool,
+	    8 * (4 + 8 + 2 * par->bitpool) * par->rate / 128 / 1000, vol);
+}
+
+static void
+a2dp_stats(int fd, short event, void *arg)
+{
+	struct a2dp	*a = arg;
+	struct timeval	 tv = { A2DP_STATS, 0 };
+	uint64_t	 sent, dropped;
+
+	if (rtp_stats(&sent, &dropped))
+		log_info("%s: sent %llu dropped %llu",
+		    bdaddr_ntoa(&a->dev->addr), (unsigned long long)sent,
+		    (unsigned long long)dropped);
+	evtimer_add(&a->stats, &tv);
+}
+
 static void
 a2dp_peer_command(struct a2dp *a, uint8_t label, uint8_t signal,
     const uint8_t *p, size_t len)
