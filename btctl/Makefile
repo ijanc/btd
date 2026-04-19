@@ -1,7 +1,7 @@
 PROG=	btctl
 SRCS=	btctl.c parser.c
 
-MAN=
+MAN=	btctl.8
 
 BINDIR=	/usr/local/sbin
 MANDIR=	/usr/local/man/man

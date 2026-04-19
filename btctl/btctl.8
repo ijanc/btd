@@ -1,0 +1,69 @@
+.\"
+.\" Copyright (c) 2026 Murilo Ijanc <murilo@ijanc.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: April 18 2026 $
+.Dt BTCTL 8
+.Os
+.Sh NAME
+.Nm btctl
+.Nd control the Bluetooth daemon
+.Sh SYNOPSIS
+.Nm
+.Op Fl s Ar socket
+.Ar command
+.Op Ar argument ...
+.Sh DESCRIPTION
+The
+.Nm
+program controls the
+.Xr btd 8
+daemon.
+Commands may be abbreviated.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl s Ar socket
+Use
+.Ar socket
+instead of the default
+.Pa /dev/btd.sock .
+.El
+.Pp
+The following commands are available:
+.Bl -tag -width Ds
+.It Cm log brief
+Disable verbose debug logging.
+.It Cm log verbose
+Enable verbose debug logging.
+.It Cm reload
+Reload the configuration file.
+.It Cm show Op Cm devices
+Show the configured devices, their state and, while pairing a
+keyboard, the passkey to type on it.
+.It Cm show bonds
+Show the stored bonds, without the keys.
+.It Cm show controller
+Show the controller: addresses, versions, firmware and buffers.
+.El
+.Sh FILES
+.Bl -tag -width "/dev/btd.sockXX" -compact
+.It Pa /dev/btd.sock
+.Ux Ns -domain
+socket used for communication with
+.Xr btd 8 .
+.El
+.Sh SEE ALSO
+.Xr btd.conf 5 ,
+.Xr btd 8

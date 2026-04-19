@@ -3,7 +3,7 @@ SRCS=	btd.c bus.c engine.c frontend.c control.c parse.y printconf.c log.c
 SRCS+=	hci.c rtk.c l2cap.c smp.c crypto.c att.c hogp.c hid.c bond.c
 SRCS+=	sdp.c avdtp.c avrcp.c rtp.c sbc.c audio.c
 
-MAN=
+MAN=	btd.8 btd.conf.5
 
 BINDIR=	/usr/local/sbin
 MANDIR=	/usr/local/man/man

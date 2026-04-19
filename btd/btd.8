@@ -1,0 +1,165 @@
+.\"
+.\" Copyright (c) 2026 Murilo Ijanc <murilo@ijanc.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: April 18 2026 $
+.Dt BTD 8
+.Os
+.Sh NAME
+.Nm btd
+.Nd Bluetooth daemon
+.Sh SYNOPSIS
+.Nm
+.Op Fl dnv
+.Op Fl f Ar file
+.Op Fl s Ar socket
+.Sh DESCRIPTION
+.Nm
+drives a USB Bluetooth controller attached as
+.Xr ugen 4
+from userland.
+It keeps Bluetooth Low Energy keyboards and mice connected and feeds
+their input into
+.Xr wscons 4 ,
+and plays the
+.Xr sndiod 8
+mix on an A2DP headset, with the headset volume tied to the
+.Va output.level
+control.
+.Pp
+Without a
+.Ic device
+in
+.Xr btd.conf 5 ,
+the first Bluetooth controller found on any USB bus is used.
+Realtek RTL8761BU controllers get their firmware loaded from
+.Pa /etc/firmware .
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl d
+Do not daemonize.
+If this option is specified,
+.Nm
+will run in the foreground and log to
+.Em stderr .
+.It Fl f Ar file
+Specify an alternative configuration file.
+.It Fl n
+Configtest mode.
+Only check the configuration file for validity.
+With
+.Fl v ,
+also print the parsed configuration.
+.It Fl s Ar socket
+Use an alternate location for the default control socket.
+.It Fl v
+Produce more verbose output.
+Multiple
+.Fl v
+options increase the verbosity; three of them trace every HCI packet.
+.El
+.Pp
+.Nm
+runs as several processes.
+The main process reads the configuration, the firmware and the bonds
+and stores new bonds.
+The bus process moves HCI packets between the controller and the
+engine and injects input events; it holds the device nodes and runs
+without
+.Xr pledge 2 ,
+restricted by
+.Xr unveil 2 .
+A child of it blocks reading the bulk endpoint.
+The engine process, chrooted and pledged to
+.Dq stdio ,
+parses everything that comes from the radio: HCI, L2CAP, pairing,
+GATT, HID, SDP, AVDTP and AVRCP.
+The frontend process serves the control socket and talks to
+.Xr sndiod 8 :
+it records the monitor sub-device and encodes it to SBC.
+.Sh PAIRING
+A device listed in
+.Xr btd.conf 5
+that is not bonded yet is paired when it is found.
+LE devices use Secure Connections; a keyboard asks for a six digit
+passkey, which
+.Nm
+logs and
+.Xr btctl 8
+shows: type it on the keyboard and press Enter.
+Headsets pair with Secure Simple Pairing, Just Works.
+Put the device in pairing mode before starting
+.Nm
+or reloading its configuration.
+.Sh AUDIO
+.Xr sndiod 8
+needs a monitor-only sub-device at the SBC rate, for example:
+.Bd -literal -offset indent
+sndiod_flags="-r 48000 -z 480 -b 1920 -s default -m mon -s mon"
+.Ed
+.Pp
+The frontend connects to
+.Xr sndiod 8
+as
+.Dq _btd
+and must present the session cookie of the user owning the server:
+copy
+.Pa ~/.sndio/cookie
+of that user to
+.Pa /var/db/btd/.sndio/cookie ,
+owned by
+.Dq _btd
+with mode 0600.
+.Sh HOTPLUG
+When the controller is removed,
+.Nm
+exits.
+It can be restarted when the controller comes back from
+.Pa /etc/hotplug/attach :
+.Bd -literal -offset indent
+case $1 in
+2)	case $2 in
+	ugen*)	rcctl restart btd ;;
+	esac ;;
+esac
+.Ed
+.Sh FILES
+.Bl -tag -width "/var/db/btd/.sndio/cookieXX" -compact
+.It Pa /etc/btd.conf
+Default configuration file.
+.It Pa /dev/btd.sock
+.Ux Ns -domain
+socket used for communication with
+.Xr btctl 8 .
+.It Pa /var/db/btd/bonds
+Keys of paired devices and the local identity.
+.It Pa /var/db/btd/.sndio/cookie
+.Xr sndiod 8
+session cookie.
+.It Pa /etc/firmware/rtl8761bu_fw
+.It Pa /etc/firmware/rtl8761bu_config
+RTL8761BU firmware and configuration.
+.El
+.Sh SEE ALSO
+.Xr ugen 4 ,
+.Xr wscons 4 ,
+.Xr btd.conf 5 ,
+.Xr btctl 8 ,
+.Xr sndiod 8
+.Sh CAVEATS
+Injected input reaches the
+.Xr wscons 4
+multiplexers, that is X and any other mux reader, but not the text
+console.

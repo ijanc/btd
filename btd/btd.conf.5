@@ -1,0 +1,84 @@
+.\"
+.\" Copyright (c) 2026 Murilo Ijanc <murilo@ijanc.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: April 18 2026 $
+.Dt BTD.CONF 5
+.Os
+.Sh NAME
+.Nm btd.conf
+.Nd Bluetooth daemon configuration file
+.Sh DESCRIPTION
+The
+.Xr btd 8
+daemon keeps the Bluetooth devices listed here connected.
+.Pp
+Macros can be defined that will later be expanded in context.
+Macro names must start with a letter, digit, or underscore,
+and may contain any of those characters.
+Macro names may not be reserved words.
+Macros are not expanded inside quotes.
+.Pp
+Addresses are written as six colon separated hexadecimal octets, most
+significant first.
+For LE devices this is the identity address.
+.Bl -tag -width Ds
+.It Ic device Ar ugenN
+Use this
+.Xr ugen 4
+device instead of the first Bluetooth controller found.
+.It Ic firmware Ar name
+Load the firmware from
+.Pa /etc/firmware/ Ns Ar name Ns Pa _fw
+and
+.Pa /etc/firmware/ Ns Ar name Ns Pa _config .
+By default the name follows from the USB vendor and product.
+.It Ic hid Ar address
+Connect to an LE HID device, such as a keyboard or a mouse, and send
+its input to
+.Xr wscons 4 .
+Up to eight may be given.
+.It Ic headset Ar address Op Brq ...
+Stream the
+.Xr sndiod 8
+mix to an A2DP headset.
+Only one headset is supported.
+The following options may be given in braces:
+.Bl -tag -width Ds
+.It Ic bitpool Ar number
+Upper bound of the SBC bitpool, 2 to 53, lowered to what the headset
+accepts.
+The default is 53.
+.It Ic rate Ar 44100 | 48000
+Sampling rate.
+48000 falls back to 44100 if the headset lacks it.
+The default is 48000.
+.El
+.El
+.Sh FILES
+.Bl -tag -width /etc/btd.conf -compact
+.It Pa /etc/btd.conf
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+hid 00:11:22:33:44:55
+hid 00:11:22:33:44:66
+headset 00:11:22:33:44:77 {
+	rate 48000
+	bitpool 53
+}
+.Ed
+.Sh SEE ALSO
+.Xr btctl 8 ,
+.Xr btd 8
