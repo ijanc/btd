@@ -2,4 +2,41 @@ btd - Bluetooth daemon for OpenBSD
 ==================================
 
 btd drives a USB Bluetooth controller attached as ugen(4) from
-userland.
+userland.  It keeps Bluetooth Low Energy keyboards and mice connected
+and injects their input into wscons(4), and plays the sndiod(8) mix
+on an A2DP headset, with AVRCP absolute volume tied to output.level.
+
+The daemon is split into privilege separated processes:
+
+  main      configuration, firmware, bonds, control socket setup
+  bus       USB control requests, interrupt and bulk endpoints,
+            wscons injection; no pledge(2), unveil(2) only
+  engine    HCI, L2CAP, SMP, ATT/GATT, HOGP, HID, SDP, AVDTP, AVRCP,
+            RTP; chroot(2), pledge "stdio"
+  frontend  control socket for btctl(8), sndio recording and SBC
+            encoding, mixer volume
+
+Supported hardware: Realtek RTL8761BU (TP-Link UB500).  Its firmware
+is loaded from /etc/firmware/rtl8761bu_fw and rtl8761bu_config.
+
+Build and install:
+
+	make obj
+	make
+	doas make install
+	doas install -m 555 etc/rc.d/btd /etc/rc.d/btd
+
+Run the tests (the SBC test needs ffmpeg to decode):
+
+	make regress
+
+Setup:
+
+	doas useradd -L daemon -g =uid -s /sbin/nologin -d /var/empty \
+	    -c "Bluetooth Daemon" _btd
+	doas install -d -m 755 /var/db/btd
+	doas install -d -m 700 -o _btd -g _btd /var/db/btd/.sndio
+	doas install -m 600 -o _btd -g _btd ~/.sndio/cookie \
+	    /var/db/btd/.sndio/cookie
+
+See btd(8), btd.conf(5) and btctl(8).
