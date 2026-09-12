@@ -32,6 +32,7 @@
 #define	AUDIO_CTL		"snd/default"
 #define	AUDIO_RETRY		2
 #define	AUDIO_MAXFRAME		512
+#define	AUDIO_MAXCHAN		8
 
 struct audio {
 	struct sio_hdl		*hdl;
@@ -45,18 +46,20 @@ struct audio {
 	size_t			 have;
 };
 
+struct volume_ctl {
+	unsigned int		 addr;
+	unsigned int		 val;
+};
+
 struct volume {
 	struct sioctl_hdl	*hdl;
 	struct event		 ev;
 	struct event		 retry;
-	unsigned int		 level_addr;
-	unsigned int		 mute_addr;
+	struct volume_ctl	 level[AUDIO_MAXCHAN];
+	struct volume_ctl	 mute[AUDIO_MAXCHAN];
+	int			 nlevel;
+	int			 nmute;
 	unsigned int		 maxval;
-	unsigned int		 level;
-	unsigned int		 mute;
-	int			 have_level;
-	int			 have_mute;
-	int			 sent;
 };
 
 static void	 audio_open(void);
@@ -81,7 +84,6 @@ audio_init(void)
 {
 	evtimer_set(&audio.retry, audio_retry, NULL);
 	evtimer_set(&volume.retry, volume_retry, NULL);
-	volume.sent = -1;
 	volume_open();
 }
 
@@ -227,12 +229,13 @@ void
 audio_set_volume(int v)
 {
 	unsigned int	 val;
+	int		 i;
 
-	if (volume.hdl == NULL || !volume.have_level || v < 0 || v > 127)
+	if (volume.hdl == NULL || volume.nlevel == 0 || v < 0 || v > 127)
 		return;
 	val = (v * volume.maxval + 63) / 127;
-	volume.sent = v;
-	sioctl_setval(volume.hdl, volume.level_addr, val);
+	for (i = 0; i < volume.nlevel; i++)
+		sioctl_setval(volume.hdl, volume.level[i].addr, val);
 }
 
 static void
@@ -240,7 +243,7 @@ volume_open(void)
 {
 	struct timeval	 tv = { AUDIO_RETRY, 0 };
 
-	volume.have_level = volume.have_mute = 0;
+	volume.nlevel = volume.nmute = 0;
 	if ((volume.hdl = sioctl_open(AUDIO_CTL, SIOCTL_READ | SIOCTL_WRITE,
 	    1)) == NULL) {
 		evtimer_add(&volume.retry, &tv);
@@ -320,38 +323,51 @@ volume_ondesc(void *arg, struct sioctl_desc *d, int val)
 	}
 	if (d->group[0] != '\0' || strcmp(d->node0.name, "output") != 0)
 		return;
-	if (d->type == SIOCTL_NUM && strcmp(d->func, "level") == 0) {
-		volume.level_addr = d->addr;
+	if (d->type == SIOCTL_NUM && strcmp(d->func, "level") == 0 &&
+	    volume.nlevel < AUDIO_MAXCHAN) {
+		volume.level[volume.nlevel].addr = d->addr;
+		volume.level[volume.nlevel++].val = val;
 		volume.maxval = d->maxval;
-		volume.level = val;
-		volume.have_level = 1;
-	} else if (d->type == SIOCTL_SW && strcmp(d->func, "mute") == 0) {
-		volume.mute_addr = d->addr;
-		volume.mute = val;
-		volume.have_mute = 1;
+	} else if (d->type == SIOCTL_SW && strcmp(d->func, "mute") == 0 &&
+	    volume.nmute < AUDIO_MAXCHAN) {
+		volume.mute[volume.nmute].addr = d->addr;
+		volume.mute[volume.nmute++].val = val;
 	}
 }
 
 static void
 volume_onval(void *arg, unsigned int addr, unsigned int val)
 {
-	if (volume.have_level && addr == volume.level_addr)
-		volume.level = val;
-	else if (volume.have_mute && addr == volume.mute_addr)
-		volume.mute = val;
-	else
-		return;
-	volume_report();
+	int	 i;
+
+	for (i = 0; i < volume.nlevel; i++)
+		if (volume.level[i].addr == addr) {
+			volume.level[i].val = val;
+			volume_report();
+			return;
+		}
+	for (i = 0; i < volume.nmute; i++)
+		if (volume.mute[i].addr == addr) {
+			volume.mute[i].val = val;
+			volume_report();
+			return;
+		}
 }
 
 static void
 volume_report(void)
 {
-	int	 v;
+	unsigned int	 level = 0;
+	int		 i, v, mute = volume.nmute > 0;
 
-	if (!volume.have_level || volume.maxval == 0)
+	if (volume.nlevel == 0 || volume.maxval == 0)
 		return;
-	v = volume.have_mute && volume.mute ? 0 :
-	    (volume.level * 127 + volume.maxval / 2) / volume.maxval;
+	for (i = 0; i < volume.nlevel; i++)
+		if (volume.level[i].val > level)
+			level = volume.level[i].val;
+	for (i = 0; i < volume.nmute; i++)
+		if (!volume.mute[i].val)
+			mute = 0;
+	v = mute ? 0 : (level * 127 + volume.maxval / 2) / volume.maxval;
 	frontend_imsg_compose_engine(IMSG_VOLUME_LOCAL, 0, &v, sizeof(v));
 }
