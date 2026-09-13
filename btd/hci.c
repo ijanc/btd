@@ -28,6 +28,7 @@
 #include "btd.h"
 
 #define	HCI_CMD_TIMEOUT		5
+#define	HCI_RESET_TRIES		3
 #define	HCI_EVBUF		4096
 #define	HCI_ACLBUF		(4 + 4096)
 
@@ -83,6 +84,7 @@ static int			 ev_flush, in_event;
 static uint8_t			 aclbuf[HCI_ACLBUF];
 static size_t			 acllen;
 static int			 ext_page;
+static int			 reset_tries;
 
 static void
 hci_trace(const char *dir, uint8_t type, const uint8_t *p, size_t len)
@@ -870,6 +872,14 @@ hci_init_step(void *arg, uint8_t status, const uint8_t *rp, size_t len)
 {
 	int	 step = (intptr_t)arg;
 
+	if (step == I_RESET && status == HCI_ERR_TIMEOUT &&
+	    ++reset_tries < HCI_RESET_TRIES) {
+		log_warnx("controller reset timed out, retrying");
+		hci_init_next(I_RESET);
+		return;
+	}
+	if (step == I_RESET)
+		reset_tries = 0;
 	if (status != 0 && step != I_ADV_SETS && step != I_ADV_DATA_LEN &&
 	    step != I_DATA_LEN_READ && step != I_DATA_LEN_WRITE)
 		fatalx("controller init step %d failed: 0x%02x", step, status);
