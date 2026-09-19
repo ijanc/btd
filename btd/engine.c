@@ -572,6 +572,18 @@ engine_hci_event(uint8_t code, const uint8_t *p, size_t len)
 			    bdaddr_ntoa((const struct bdaddr *)(p + 1)),
 			    p[7] ? "peripheral" : "central", p[0]);
 		break;
+	case HCI_EVT_REMOTE_EXT_FEATURES:
+		if (len < 13 || p[0] != 0 ||
+		    (c = hci_conn_find(get16(p + 1))) == NULL)
+			break;
+		if (p[3] == 1)
+			log_debug("%s: secure connections host support %s",
+			    bdaddr_ntoa(&c->peer), p[5] & 0x08 ? "yes" : "no");
+		else if (p[3] == 2)
+			log_debug("%s: secure connections controller support "
+			    "%s", bdaddr_ntoa(&c->peer), p[6] & 0x01 ? "yes" :
+			    "no");
+		break;
 	case HCI_EVT_MODE_CHANGE:
 		if (len >= 6 && (c = hci_conn_find(get16(p + 1))) != NULL)
 			log_debug("%s: mode %u, interval %u",
@@ -990,6 +1002,7 @@ void
 engine_conn_up(struct hci_conn *c)
 {
 	struct device	*dev;
+	uint8_t		 ext[3];
 
 	if (c->link == LINK_LE)
 		dev = (busy != NULL && busy->kind == DEV_HID) ? busy : NULL;
@@ -1014,8 +1027,15 @@ engine_conn_up(struct hci_conn *c)
 	log_info("%s: connected", bdaddr_ntoa(&dev->addr));
 	if (c->link == LINK_LE)
 		smp_le_secure(c);
-	else
+	else {
+		ext[0] = c->handle & 0xff;
+		ext[1] = c->handle >> 8;
+		ext[2] = 1;
+		hci_cmd(HCI_CMD_READ_REMOTE_EXT_FEATURES, ext, 3, NULL, NULL);
+		ext[2] = 2;
+		hci_cmd(HCI_CMD_READ_REMOTE_EXT_FEATURES, ext, 3, NULL, NULL);
 		ssp_secure(c);
+	}
 }
 
 void
@@ -1097,8 +1117,11 @@ engine_adv_report(const struct bdaddr *addr, uint8_t type, int connectable,
 			continue;
 		if (bdaddr_cmp(&dev->addr, addr) == 0)
 			break;
+		if ((b = bond_find(BOND_LE, &dev->addr)) == NULL)
+			continue;
+		if ((b->flags & BOND_F_IDENT) && bdaddr_cmp(&b->ident, addr) == 0)
+			break;
 		if (type == BDADDR_RANDOM && (addr->b[5] & 0xc0) == 0x40 &&
-		    (b = bond_find(BOND_LE, &dev->addr)) != NULL &&
 		    (b->flags & BOND_F_IRK) && smp_rpa_match(b->irk, addr))
 			break;
 	}

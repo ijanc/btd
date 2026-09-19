@@ -184,6 +184,7 @@ smp_send(struct smp *smp, uint8_t code, const void *p, size_t len)
 
 	buf[0] = code;
 	memcpy(buf + 1, p, len);
+	log_debug("%s: smp send 0x%02x", bdaddr_ntoa(&smp->conn->peer), code);
 	l2cap_send_fixed(smp->conn, L2CAP_CID_SMP, buf, 1 + len);
 }
 
@@ -336,6 +337,8 @@ smp_input(struct hci_conn *c, const uint8_t *p, size_t len)
 
 	if (len < 1)
 		return;
+	log_debug("%s: smp code 0x%02x in state %d, %zu bytes",
+	    bdaddr_ntoa(&c->peer), p[0], smp->state, len);
 	switch (p[0]) {
 	case SMP_PAIRING_RSP:
 		if (smp->state == SMP_S_WAIT_RSP)
@@ -633,10 +636,13 @@ smp_finish(struct smp *smp)
 		b.addr = c->peer;
 	b.addr_type = c->peer_type;
 	if (smp->have_ident) {
-		if (bdaddr_cmp(&smp->ident, &b.addr) != 0)
-			log_warnx("%s: identity address %s",
-			    bdaddr_ntoa(&b.addr), bdaddr_ntoa(&smp->ident));
 		b.addr_type = smp->ident_type;
+		if (bdaddr_cmp(&smp->ident, &b.addr) != 0) {
+			log_info("%s: identity address %s",
+			    bdaddr_ntoa(&b.addr), bdaddr_ntoa(&smp->ident));
+			b.ident = smp->ident;
+			b.flags |= BOND_F_IDENT;
+		}
 	}
 	memcpy(b.ltk, smp->ltk, 16);
 	b.keysize = smp->keysize;

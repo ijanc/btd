@@ -274,6 +274,8 @@ avrcp_response(struct avrcp *av, const uint8_t *p, size_t len)
 	if (10 + plen > len)
 		return;
 	par = p + 10;
+	log_debug("%s: AVRCP response 0x%02x to pdu 0x%02x, %zu bytes",
+	    bdaddr_ntoa(&av->dev->addr), rtype, pdu, plen);
 
 	switch (pdu) {
 	case AVRCP_GET_CAPABILITIES:
@@ -344,6 +346,12 @@ avrcp_command(struct avrcp *av, uint8_t label, const uint8_t *p, size_t len)
 
 	if (len < 3 || len > sizeof(rsp))
 		return;
+	log_debug("%s: AVRCP command 0x%02x opcode 0x%02x%s",
+	    bdaddr_ntoa(&av->dev->addr), p[0], p[2], len >= 7 && p[2] ==
+	    AVC_OP_VENDOR ? " (vendor)" : "");
+	if (len >= 7 && p[2] == AVC_OP_VENDOR)
+		log_debug("%s: AVRCP vendor pdu 0x%02x",
+		    bdaddr_ntoa(&av->dev->addr), p[6]);
 	memcpy(rsp, p, len);
 	n = len;
 	switch (p[2]) {

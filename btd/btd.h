@@ -122,6 +122,7 @@ struct btd_conf {
 #define	BOND_F_SC	0x02
 #define	BOND_F_IRK	0x04
 #define	BOND_F_LTK	0x08
+#define	BOND_F_IDENT	0x10
 
 struct bond {
 	TAILQ_ENTRY(bond)	 entry;
@@ -129,6 +130,7 @@ struct bond {
 	struct bdaddr		 addr;
 	uint8_t			 addr_type;
 	uint8_t			 flags;
+	struct bdaddr		 ident;
 	uint8_t			 ltk[16];
 	uint16_t		 ediv;
 	uint64_t		 rand;
@@ -257,6 +259,7 @@ void		 bond_delete(struct bond *);
 #define	HCI_CMD_SET_CONN_ENCRYPTION	0x0413
 #define	HCI_CMD_REMOTE_NAME_REQUEST	0x0419
 #define	HCI_CMD_READ_REMOTE_FEATURES	0x041b
+#define	HCI_CMD_READ_REMOTE_EXT_FEATURES 0x041c
 #define	HCI_CMD_IO_CAP_REPLY		0x042b
 #define	HCI_CMD_USER_CONFIRM_REPLY	0x042c
 #define	HCI_CMD_USER_CONFIRM_NEG_REPLY	0x042d
@@ -316,6 +319,7 @@ void		 bond_delete(struct bond *);
 #define	HCI_EVT_PIN_CODE_REQUEST	0x16
 #define	HCI_EVT_LINK_KEY_REQUEST	0x17
 #define	HCI_EVT_LINK_KEY_NOTIFICATION	0x18
+#define	HCI_EVT_REMOTE_EXT_FEATURES	0x23
 #define	HCI_EVT_ENCRYPTION_KEY_REFRESH	0x30
 #define	HCI_EVT_IO_CAP_REQUEST		0x31
 #define	HCI_EVT_IO_CAP_RESPONSE		0x32

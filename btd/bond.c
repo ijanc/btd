@@ -63,7 +63,7 @@ hex_print(FILE *f, const uint8_t *p, size_t len)
  * One bond per line:
  *	local ADDR irk HEX
  *	le ADDR public|random [ltk HEX ediv N rand N keysize N] [irk HEX]
- *	    [auth] [sc]
+ *	    [ident ADDR] [auth] [sc]
  *	br ADDR linkkey HEX type N
  */
 static int
@@ -128,6 +128,10 @@ bond_parse(char *line, struct bond *b, struct bond_local *local)
 			if (hex_decode(word[++i], b->ltk, sizeof(b->ltk)) == -1)
 				return (-1);
 			b->flags |= BOND_F_LTK;
+		} else if (strcmp(word[i], "ident") == 0) {
+			if (bdaddr_aton(word[++i], &b->ident) == -1)
+				return (-1);
+			b->flags |= BOND_F_IDENT;
 		} else if (strcmp(word[i], "irk") == 0) {
 			if (hex_decode(word[++i], b->irk, sizeof(b->irk)) == -1)
 				return (-1);
@@ -232,6 +236,8 @@ bond_write(const char *path, struct bond_list *list, struct bond_local *local)
 			fprintf(f, " irk ");
 			hex_print(f, b->irk, sizeof(b->irk));
 		}
+		if (b->flags & BOND_F_IDENT)
+			fprintf(f, " ident %s", bdaddr_ntoa(&b->ident));
 		if (b->flags & BOND_F_AUTH)
 			fprintf(f, " auth");
 		if (b->flags & BOND_F_SC)
