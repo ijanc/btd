@@ -13,7 +13,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: April 18 2026 $
+.Dd $Mdocdate: September 20 2026 $
 .Dt BTD.CONF 5
 .Os
 .Sh NAME
@@ -32,7 +32,8 @@ Macros are not expanded inside quotes.
 .Pp
 Addresses are written as six colon separated hexadecimal octets, most
 significant first.
-For LE devices this is the identity address.
+For LE devices this is the address the device advertises while
+pairing.
 .Bl -tag -width Ds
 .It Ic device Ar ugenN
 Use this
@@ -73,7 +74,7 @@ The default is 48000.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 hid 00:11:22:33:44:55
-hid 00:11:22:33:44:66
+hid 00:11:22:33:44:67
 headset 00:11:22:33:44:77 {
 	rate 48000
 	bitpool 53
@@ -82,3 +83,12 @@ headset 00:11:22:33:44:77 {
 .Sh SEE ALSO
 .Xr btctl 8 ,
 .Xr btd 8
+.Sh CAVEATS
+Some LE devices, such as Logitech keyboards and mice, advertise a new
+address each time they enter pairing mode, and may distribute a
+different identity address once paired.
+.Xr btd 8
+stores the identity address with the bond and recognizes the device by
+either address, but a device paired again must have its
+.Ic hid
+line updated to the address it advertised while pairing.
