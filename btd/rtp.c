@@ -16,11 +16,13 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <sys/time.h>
 
 #include <event.h>
 #include <imsg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "log.h"
 #include "btd.h"
@@ -42,6 +44,7 @@ struct rtp {
 	int			 frames;
 	uint64_t		 sent;
 	uint64_t		 dropped;
+	int			 dropping;
 	uint64_t		 reported;
 };
 
@@ -103,11 +106,25 @@ rtp_frame(const uint8_t *frame, size_t len)
 static void
 rtp_send(void)
 {
-	uint8_t	*p = rtp.pkt;
+	struct hci_conn	*c = rtp.chan->conn;
+	struct timespec	 now, d;
+	uint8_t		*p = rtp.pkt;
 
-	if (hci_acl_pending(LINK_BR) > RTP_MAX_PENDING)
+	if (hci_acl_pending(LINK_BR) > RTP_MAX_PENDING) {
+		if (rtp.dropping++ == 0) {
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			timespecsub(&now, &c->completed, &d);
+			log_debug("%s: dropping, %d packets pending, last "
+			    "completed %lld ms ago", bdaddr_ntoa(&c->peer),
+			    hci_acl_pending(LINK_BR),
+			    (long long)d.tv_sec * 1000 + d.tv_nsec / 1000000);
+		}
 		rtp.dropped++;
-	else {
+	} else {
+		if (rtp.dropping > 0)
+			log_debug("%s: resumed after %d dropped packets",
+			    bdaddr_ntoa(&c->peer), rtp.dropping);
+		rtp.dropping = 0;
 		p[0] = RTP_VERSION;
 		p[1] = RTP_PAYLOAD_TYPE;
 		p[2] = rtp.seq >> 8;

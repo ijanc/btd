@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "log.h"
 #include "btd.h"
@@ -597,6 +598,7 @@ hci_completed(const uint8_t *p, size_t len)
 		if (cnt > c->inflight)
 			cnt = c->inflight;
 		c->inflight -= cnt;
+		clock_gettime(CLOCK_MONOTONIC, &c->completed);
 		if (c->link == LINK_LE && hci.le_acl_num != 0)
 			hci.le_acl_free += cnt;
 		else

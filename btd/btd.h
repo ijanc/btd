@@ -516,6 +516,7 @@ struct hci_conn {
 	int			 disconnecting;
 	int			 inflight;
 	int			 queued;
+	struct timespec		 completed;
 	uint16_t		 le_interval;
 	uint16_t		 le_latency;
 	uint16_t		 le_timeout;
