@@ -833,12 +833,15 @@ device_reconf(void)
 	struct btd_conf	*conf = engine_state.conf;
 	struct hid_conf	*hid;
 	struct device	*dev, *ndev;
+	int		 added = 0;
 
 	TAILQ_FOREACH(dev, &devices, entry)
 		dev->removed = 1;
 	TAILQ_FOREACH(hid, &conf->hid_list, entry) {
-		if ((dev = device_find(DEV_HID, &hid->addr)) == NULL)
+		if ((dev = device_find(DEV_HID, &hid->addr)) == NULL) {
 			dev = device_new(DEV_HID, &hid->addr);
+			added = 1;
+		}
 		dev->removed = 0;
 	}
 	if (conf->headset != NULL) {
@@ -858,6 +861,9 @@ device_reconf(void)
 		}
 		device_free(dev);
 	}
+	/* the controller filters duplicates until the scan restarts */
+	if (added)
+		hci_scan(0);
 	engine_schedule();
 }
 
