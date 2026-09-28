@@ -13,7 +13,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: September 20 2026 $
+.Dd $Mdocdate: September 27 2026 $
 .Dt BTD.CONF 5
 .Os
 .Sh NAME
@@ -85,10 +85,7 @@ headset 00:11:22:33:44:77 {
 .Xr btd 8
 .Sh CAVEATS
 Some LE devices, such as Logitech keyboards and mice, advertise a new
-address each time they enter pairing mode, and may distribute a
-different identity address once paired.
-.Xr btd 8
-stores the identity address with the bond and recognizes the device by
-either address, but a device paired again must have its
+address each time they enter pairing mode.
+A device paired again must have its
 .Ic hid
 line updated to the address it advertised while pairing.
