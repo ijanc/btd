@@ -1,2 +1,9 @@
-0.1
+0.1 (unreleased)
   * Initial release.
+  * Retry the controller reset when it times out.
+  * Set and report output.level on every output channel.
+  * Keep the identity address an LE device distributes when pairing.
+  * Restart the scan when a reload adds a HID device.
+  * Log when RTP packets start and stop being dropped.
+  * btd.conf(5): document LE devices that change address in pairing
+    mode.

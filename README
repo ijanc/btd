@@ -39,4 +39,19 @@ Setup:
 	doas install -m 600 -o _btd -g _btd ~/.sndio/cookie \
 	    /var/db/btd/.sndio/cookie
 
+Pairing:
+
+List the devices in /etc/btd.conf and put each one in pairing mode;
+btd pairs with a configured device that is not bonded yet when it
+finds it.  A keyboard asks for a passkey, shown by "btctl show" and
+in the log.  Bonds are kept in /var/db/btd/bonds.
+
+Some LE devices, such as Logitech keyboards and mice, advertise a new
+address each time they enter pairing mode.  To pair one again, update
+its hid line to the new address and run "btctl reload".
+
+Dropped audio packets are reported in the log every 10 seconds while
+they occur; with -v, btd also logs when packets start and stop being
+dropped and how long ago the controller last completed one.
+
 See btd(8), btd.conf(5) and btctl(8).
