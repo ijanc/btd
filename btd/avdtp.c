@@ -590,6 +590,7 @@ a2dp_peer_command(struct a2dp *a, uint8_t label, uint8_t signal,
 		a->configured = 1;
 		a->acp_seid = p[1] >> 2;
 		a->state = A2DP_S_PEER;
+		a->pending = 0;
 		evtimer_del(&a->timer);
 		log_debug("%s: configured by peer, %d Hz, bitpool %d",
 		    bdaddr_ntoa(&a->dev->addr), a->params.rate,
@@ -658,6 +659,13 @@ avdtp_accept(struct hci_conn *c)
 	a = a2dp_get(c->dev);
 	if (a->sig != NULL && a->media != NULL)
 		return (NULL);
+	/* both sides open signalling at once: keep the peer's channel */
+	if (a->sig != NULL && a->sig->state != L2CAP_S_OPEN) {
+		log_debug("%s: AVDTP signalling collision",
+		    bdaddr_ntoa(&c->dev->addr));
+		a->sig->arg = NULL;
+		a->sig = NULL;
+	}
 	return (a);
 }
 
@@ -667,12 +675,22 @@ avdtp_open(struct l2cap_chan *ch)
 	struct a2dp	*a = ch->arg;
 	uint8_t		 seid[1];
 
-	if (a == NULL)
+	if (a == NULL) {
+		l2cap_close(ch);
 		return;
+	}
 	if (a->sig == NULL)
 		a->sig = ch;
-	else if (a->sig != ch && a->media == NULL)
+	else if (a->sig != ch && a->media == NULL) {
+		if (a->state != A2DP_S_MEDIA &&
+		    (a->state != A2DP_S_PEER || !a->configured)) {
+			log_debug("%s: unexpected AVDTP channel closed",
+			    bdaddr_ntoa(&a->dev->addr));
+			l2cap_close(ch);
+			return;
+		}
 		a->media = ch;
+	}
 
 	if (ch == a->sig) {
 		if (a->state == A2DP_S_SIGNAL)
