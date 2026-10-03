@@ -82,6 +82,7 @@ enum imsg_type {
 	IMSG_HCI_ACLDATA,
 	IMSG_WSKBD,
 	IMSG_WSMOUSE,
+	IMSG_KBD_LEDS,
 	IMSG_AUDIO_START,
 	IMSG_AUDIO_STOP,
 	IMSG_AUDIO_FRAME,
@@ -384,6 +385,7 @@ struct engine_state {
 	struct bond_local	 local;
 	int			 have_local;
 	int			 kbdtype;
+	int			 leds;
 	struct engine_fw	 fw;
 	struct engine_fw	 fwconfig;
 };
@@ -424,6 +426,7 @@ struct hci_state {
 #define	ATT_OP_READ_BLOB_REQ		0x0c
 #define	ATT_OP_READ_BY_GROUP_REQ	0x10
 #define	ATT_OP_WRITE_REQ		0x12
+#define	ATT_OP_WRITE_CMD		0x52
 #define	ATT_OP_NOTIFY			0x1b
 #define	ATT_OP_INDICATE			0x1d
 #define	ATT_OP_CONFIRM			0x1e
@@ -546,6 +549,7 @@ void		 engine_show_devices(pid_t);
 void		 engine_show_bonds(pid_t);
 void		 engine_local_identity(struct bdaddr *);
 void		 engine_ready(void);
+void		 engine_leds(int);
 void		 engine_scan_changed(void);
 void		 engine_adv_report(const struct bdaddr *, uint8_t, int, int,
 		     const uint8_t *, size_t);
@@ -620,11 +624,13 @@ void		 att_free(struct att *);
 uint16_t	 att_mtu(struct att *);
 void		 att_request(struct att *, const uint8_t *, size_t, att_cb,
 		     void *);
+void		 att_command(struct att *, const uint8_t *, size_t);
 void		 att_input(struct hci_conn *, const uint8_t *, size_t);
 
 /* hogp.c */
 void		 hogp_start(struct device *);
 void		 hogp_down(struct device *);
+void		 hogp_leds(struct device *, int);
 
 /* hid.c */
 struct hid	*hid_new(uint8_t *, size_t, int);
@@ -632,6 +638,7 @@ void		 hid_free(struct hid *);
 const char	*hid_describe(struct hid *);
 void		 hid_report(struct hid *, uint8_t, const uint8_t *, size_t);
 void		 hid_reset(struct hid *);
+int		 hid_leds(struct hid *, int, uint8_t *, uint8_t *, size_t);
 
 /* sdp.c */
 void		 sdp_init(void);

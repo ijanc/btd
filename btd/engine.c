@@ -356,7 +356,7 @@ engine_dispatch_bus(int fd, short event, void *bula)
 	struct imsg		 imsg;
 	struct ibuf		 data;
 	uint32_t		 type;
-	int			 n, shut = 0;
+	int			 n, shut = 0, leds;
 
 	if (event & EV_READ) {
 		if ((n = imsgbuf_read(ibuf)) == -1)
@@ -394,6 +394,11 @@ engine_dispatch_bus(int fd, short event, void *bula)
 			if (imsg_get_ibuf(&imsg, &data) == -1)
 				fatalx("%s: invalid %s", __func__, i2s(type));
 			hci_input_acl(ibuf_data(&data), ibuf_size(&data));
+			break;
+		case IMSG_KBD_LEDS:
+			if (imsg_get_data(&imsg, &leds, sizeof(leds)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			engine_leds(leds);
 			break;
 		default:
 			log_debug("%s: unexpected imsg %d", __func__, type);
@@ -1095,6 +1100,17 @@ engine_ready(void)
 			dev->state = DEV_WAIT;
 	busy = NULL;
 	engine_schedule();
+}
+
+void
+engine_leds(int leds)
+{
+	struct device	*dev;
+
+	engine_state.leds = leds;
+	TAILQ_FOREACH(dev, &devices, entry)
+		if (dev->kind == DEV_HID)
+			hogp_leds(dev, leds);
 }
 
 void

@@ -187,11 +187,52 @@ test_kbd(int type, const char *name, int shift, int a)
 	hid_free(hid);
 }
 
+static void
+test_leds(void)
+{
+	struct hid	*hid;
+	uint8_t		 buf[8], id;
+	int		 len;
+
+	if ((hid = hid_new(kbd_map, sizeof(kbd_map), WSKBD_TYPE_USB)) == NULL)
+		errx(1, "keyboard map");
+	len = hid_leds(hid, WSKBD_LED_CAPS, &id, buf, sizeof(buf));
+	if (len == 1 && id == 1 && buf[0] == 0x02)
+		printf("leds caps: ok\n");
+	else {
+		printf("leds caps: FAILED, len %d id %u 0x%02x\n", len, id,
+		    buf[0]);
+		failed = 1;
+	}
+	len = hid_leds(hid, WSKBD_LED_NUM | WSKBD_LED_SCROLL, &id, buf,
+	    sizeof(buf));
+	if (len == 1 && id == 1 && buf[0] == 0x05)
+		printf("leds num scroll: ok\n");
+	else {
+		printf("leds num scroll: FAILED, len %d id %u 0x%02x\n", len,
+		    id, buf[0]);
+		failed = 1;
+	}
+	hid_free(hid);
+
+	if ((hid = hid_new(mouse_map, sizeof(mouse_map), WSKBD_TYPE_USB)) ==
+	    NULL)
+		errx(1, "mouse map");
+	if (hid_leds(hid, WSKBD_LED_CAPS, &id, buf, sizeof(buf)) == -1)
+		printf("leds mouse: ok\n");
+	else {
+		printf("leds mouse: FAILED\n");
+		failed = 1;
+	}
+	hid_free(hid);
+}
+
 int
 main(void)
 {
 	test_mouse();
 	test_kbd(WSKBD_TYPE_PC_XT, "xt", 0x2a, 0x1e);
 	test_kbd(WSKBD_TYPE_USB, "usb", 0xe1, 0x04);
+	test_leds();
 	return (failed);
 }

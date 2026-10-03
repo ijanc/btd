@@ -39,6 +39,7 @@
 #include "btd.h"
 
 #define	BUS_READSIZE	1024
+#define	BUS_LEDPOLL	200	/* ms */
 
 __dead void	 bus_shutdown(void);
 void		 bus_sig_handler(int, short, void *);
@@ -53,12 +54,14 @@ void		 bus_cmd(uint8_t *, size_t);
 void		 bus_write_acl(uint8_t *, size_t);
 void		 bus_inject(int, struct wscons_event *, size_t);
 void		 bus_inject_mouse(struct wscons_event *, size_t);
+void		 bus_leds(int, short, void *);
 
 static struct imsgev	*iev_main;
 static struct imsgev	*iev_engine;
-static struct event	 ev_intr, ev_acl;
+static struct event	 ev_intr, ev_acl, ev_leds;
 static int		 ctlfd = -1, intrfd = -1, bulkfd = -1, cfgfd = -1;
 static pid_t		 reader_pid = -1;
+static int		 leds = -1, leds_failed;
 
 void
 bus_sig_handler(int sig, short event, void *bula)
@@ -85,6 +88,8 @@ bus(int debug, int verbose)
 
 	if (unveil(_PATH_WSMOUSE, "w") == -1)
 		fatal("unveil %s", _PATH_WSMOUSE);
+	if (unveil(_PATH_WSKBD, "w") == -1)
+		fatal("unveil %s", _PATH_WSKBD);
 	if (unveil(NULL, NULL) == -1)
 		fatal("unveil");
 
@@ -343,8 +348,10 @@ bus_startup(void)
 	event_add(&ev_acl, NULL);
 	event_set(&ev_intr, intrfd, EV_READ | EV_PERSIST, bus_intr, NULL);
 	event_add(&ev_intr, NULL);
+	evtimer_set(&ev_leds, bus_leds, NULL);
 
 	imsg_compose_event(iev_engine, IMSG_STARTUP, 0, 0, -1, NULL, 0);
+	bus_leds(-1, 0, NULL);
 }
 
 /*
@@ -471,4 +478,39 @@ bus_inject_mouse(struct wscons_event *ev, size_t n)
 	}
 	bus_inject(fd, ev, n);
 	close(fd);
+}
+
+/*
+ * Injected keys never reach a keyboard driver, so the LEDs follow the
+ * state set on the first wskbd, which the mux keeps in step with X.
+ * There is no event for it; like the mouse mux, the keyboard is held
+ * open only for one request.
+ */
+void
+bus_leds(int fd, short event, void *bula)
+{
+	struct timeval	 tv = { 0, BUS_LEDPOLL * 1000 };
+	int		 kfd, n;
+
+	evtimer_add(&ev_leds, &tv);
+	if ((kfd = open(_PATH_WSKBD, O_WRONLY | O_CLOEXEC)) == -1) {
+		if (!leds_failed)
+			log_warn("%s", _PATH_WSKBD);
+		leds_failed = 1;
+		return;
+	}
+	if (ioctl(kfd, WSKBDIO_GETLEDS, &n) == -1) {
+		if (!leds_failed)
+			log_warn("WSKBDIO_GETLEDS");
+		leds_failed = 1;
+		close(kfd);
+		return;
+	}
+	close(kfd);
+	leds_failed = 0;
+	if (n == leds)
+		return;
+	leds = n;
+	imsg_compose_event(iev_engine, IMSG_KBD_LEDS, 0, 0, -1, &leds,
+	    sizeof(leds));
 }

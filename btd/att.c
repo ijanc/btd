@@ -120,6 +120,14 @@ att_request(struct att *att, const uint8_t *pdu, size_t len, att_cb cb,
 	att_kick(att);
 }
 
+void
+att_command(struct att *att, const uint8_t *pdu, size_t len)
+{
+	if (len > att->mtu)
+		fatalx("%s: command too long", __func__);
+	l2cap_send_fixed(att->conn, L2CAP_CID_ATT, pdu, len);
+}
+
 static void
 att_kick(struct att *att)
 {

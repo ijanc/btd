@@ -34,6 +34,7 @@
 
 #define	HID_PAGE_DESKTOP	0x01
 #define	HID_PAGE_KEYBOARD	0x07
+#define	HID_PAGE_LED		0x08
 #define	HID_PAGE_BUTTON		0x09
 #define	HID_PAGE_CONSUMER	0x0c
 
@@ -46,6 +47,7 @@
 #define	HID_MAXFIELDS		128
 #define	HID_MAXIDS		16
 #define	HID_MAXBUTTONS		32
+#define	HID_MAXLED		4
 
 #define	NN			0
 
@@ -96,6 +98,10 @@ struct hid {
 	int			 xt;
 	int			 kbd;
 	int			 mouse;
+	hid_item_t		 led[HID_MAXLED + 1];
+	int			 ledmask;
+	int			 ledid;
+	int			 ledlen;
 };
 
 struct hid_events {
@@ -119,6 +125,7 @@ hid_new(uint8_t *map, size_t len, int kbdtype)
 	report_desc_t		 rd;
 	hid_data_t		 hd;
 	hid_item_t		 item;
+	int			 u;
 
 	if ((rd = hid_use_report_desc(map, len)) == NULL)
 		return (NULL);
@@ -149,6 +156,27 @@ hid_new(uint8_t *map, size_t len, int kbdtype)
 			hid->kbd = 1;
 		else if (f->page == HID_PAGE_BUTTON && f->variable)
 			hid->mouse = 1;
+	}
+	hid_end_parse(hd);
+
+	if ((hd = hid_start_parse(rd, 1 << hid_output, -1)) == NULL)
+		fatal(NULL);
+	while (hid_get_item(hd, &item) > 0) {
+		if (item.kind != hid_output || (item.flags & HIO_CONST) ||
+		    !(item.flags & HIO_VARIABLE) ||
+		    HID_PAGE(item.usage) != HID_PAGE_LED)
+			continue;
+		u = HID_USAGE(item.usage);
+		if (u < 1 || u > HID_MAXLED)
+			continue;
+		if (hid->ledmask == 0) {
+			hid->ledid = item.report_ID;
+			hid->ledlen = hid_report_size(rd, hid_output,
+			    item.report_ID);
+		} else if (item.report_ID != hid->ledid)
+			continue;
+		hid->led[u] = item;
+		hid->ledmask |= 1 << u;
 	}
 	hid_end_parse(hd);
 	hid_dispose_report_desc(rd);
@@ -364,4 +392,25 @@ hid_reset(struct hid *hid)
 		hid_event(&e, WSCONS_EVENT_SYNC, 0);
 		hid_flush(IMSG_WSMOUSE, &e);
 	}
+}
+
+/* Build the output report that drives the keyboard LEDs. */
+int
+hid_leds(struct hid *hid, int leds, uint8_t *id, uint8_t *buf, size_t len)
+{
+	static const int	 wsled[HID_MAXLED + 1] = {
+		0, WSKBD_LED_NUM, WSKBD_LED_CAPS, WSKBD_LED_SCROLL,
+		WSKBD_LED_COMPOSE,
+	};
+	int			 u;
+
+	if (hid->ledmask == 0 || hid->ledlen == 0 ||
+	    (size_t)hid->ledlen > len)
+		return (-1);
+	memset(buf, 0, hid->ledlen);
+	for (u = 1; u <= HID_MAXLED; u++)
+		if (hid->ledmask & (1 << u))
+			hid_set_data(buf, &hid->led[u], (leds & wsled[u]) != 0);
+	*id = hid->ledid;
+	return (hid->ledlen);
 }

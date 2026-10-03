@@ -37,8 +37,10 @@
 #define	HOGP_MAXCHARS		32
 #define	HOGP_MAXREPORTS		16
 #define	HOGP_MAXMAP		4096
+#define	HOGP_MAXLEDS		8
 
 #define	REPORT_INPUT		1
+#define	REPORT_OUTPUT		2
 
 struct hogp_char {
 	uint16_t		 decl;
@@ -69,6 +71,7 @@ struct hogp {
 	size_t			 maplen;
 	struct hid		*hid;
 	int			 ready;
+	int			 leds;
 };
 
 static void	 hogp_fail(struct hogp *, const char *);
@@ -97,6 +100,7 @@ hogp_start(struct device *dev)
 		fatal(NULL);
 	hogp->dev = dev;
 	hogp->att = dev->conn->att;
+	hogp->leds = -1;
 	dev->proto = hogp;
 	att_set_notify(hogp->att, hogp_notify, hogp);
 	hogp_find_service(hogp);
@@ -405,6 +409,7 @@ hogp_ready(struct hogp *hogp)
 	    n == 1 ? "" : "s", hid_describe(hogp->hid));
 	log_info("%s: ready, %s", bdaddr_ntoa(&dev->addr), dev->info);
 	device_state(dev, DEV_READY);
+	hogp_leds(dev, engine_state.leds);
 }
 
 static void
@@ -423,6 +428,30 @@ hogp_notify(void *arg, uint16_t handle, const uint8_t *p, size_t len)
 			    bdaddr_ntoa(&hogp->dev->addr),
 			    hogp->reports[i].id, len);
 		hid_report(hogp->hid, hogp->reports[i].id, p, len);
+		return;
+	}
+}
+
+void
+hogp_leds(struct device *dev, int leds)
+{
+	struct hogp	*hogp = dev->proto;
+	uint8_t		 p[3 + HOGP_MAXLEDS], id;
+	int		 i, len;
+
+	if (hogp == NULL || !hogp->ready || leds == hogp->leds)
+		return;
+	if ((len = hid_leds(hogp->hid, leds, &id, p + 3, HOGP_MAXLEDS)) == -1)
+		return;
+	for (i = 0; i < hogp->nreports; i++) {
+		if (hogp->reports[i].type != REPORT_OUTPUT ||
+		    hogp->reports[i].id != id)
+			continue;
+		p[0] = ATT_OP_WRITE_CMD;
+		put16(p + 1, hogp->reports[i].value);
+		att_command(hogp->att, p, 3 + len);
+		hogp->leds = leds;
+		log_debug("%s: leds 0x%02x", bdaddr_ntoa(&dev->addr), leds);
 		return;
 	}
 }
