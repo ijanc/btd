@@ -50,6 +50,12 @@ Some LE devices, such as Logitech keyboards and mice, advertise a new
 address each time they enter pairing mode.  To pair one again, update
 its hid line to the new address and run "btctl reload".
 
+Keyboard LEDs:
+
+Keyboard LEDs such as Caps Lock follow the state X sets on wskbd0,
+polled every 200 ms.  Without a keyboard attached as wskbd0 they stay
+off.
+
 Dropped audio packets are reported in the log every 10 seconds while
 they occur; with -v, btd also logs when packets start and stop being
 dropped and how long ago the controller last completed one.
