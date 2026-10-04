@@ -6,5 +6,7 @@
   * Restart the scan when a reload adds a HID device.
   * Log when RTP packets start and stop being dropped.
   * Drive the keyboard LEDs from the state X sets on wskbd0.
+  * Keep the headset's AVDTP signalling channel when both sides open
+    one at once.
   * btd.conf(5): document LE devices that change address in pairing
     mode.
