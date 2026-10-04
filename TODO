@@ -99,8 +99,6 @@ Daemon conventions
 Documentation
 -------------
 
-- btd.8: HOTPLUG example matches class 2 (disk), ugen is 0.
-- hci.c, hci_init_next: the comment refers to another host stack.
 - btd.8:
   - only 2357:0604 is known, other RTL8761BU need "firmware".
   - document SIGHUP, and that device and firmware need a restart.
