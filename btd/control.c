@@ -220,6 +220,7 @@ control_dispatch_imsg(int fd, short event, void *bula)
 {
 	struct ctl_conn	*c;
 	struct imsg	 imsg;
+	struct bdaddr	 addr;
 	int		 n, verbose;
 	uint32_t	 type;
 	pid_t		 pid;
@@ -268,6 +269,12 @@ control_dispatch_imsg(int fd, short event, void *bula)
 			break;
 		case IMSG_CTL_RELOAD:
 			frontend_imsg_compose_main(type, pid, NULL, 0);
+			break;
+		case IMSG_CTL_UNPAIR:
+			if (imsg_get_data(&imsg, &addr, sizeof(addr)) == -1)
+				break;
+			frontend_imsg_compose_engine(type, pid, &addr,
+			    sizeof(addr));
 			break;
 		case IMSG_CTL_SHOW_CONTROLLER:
 		case IMSG_CTL_SHOW_DEVICES:

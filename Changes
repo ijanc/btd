@@ -9,6 +9,8 @@
   * Keep the headset's AVDTP signalling channel when both sides open
     one at once.
   * Report the battery level of keyboards and mice.
+  * Keep a bond when the peer reports a missing key, refuse to pair
+    a bonded device and add "btctl unpair" to pair it again.
   * Bound the SDP continuation state and the HID report map fields
     taken from the peer.
   * btd.conf(5): document LE devices that change address in pairing

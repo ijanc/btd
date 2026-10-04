@@ -21,11 +21,13 @@ enum actions {
 	SHOW_BONDS,
 	LOG_VERBOSE,
 	LOG_BRIEF,
-	RELOAD
+	RELOAD,
+	UNPAIR
 };
 
 struct parse_result {
 	enum actions	 action;
+	struct bdaddr	 addr;
 };
 
 struct parse_result	*parse(int, char *[]);

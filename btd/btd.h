@@ -47,6 +47,7 @@ enum imsg_type {
 	IMSG_NONE,
 	IMSG_CTL_LOG_VERBOSE,
 	IMSG_CTL_RELOAD,
+	IMSG_CTL_UNPAIR,
 	IMSG_CTL_SHOW_CONTROLLER,
 	IMSG_CTL_SHOW_DEVICES,
 	IMSG_CTL_SHOW_BONDS,
@@ -548,6 +549,7 @@ int		 engine_imsg_compose_frontend(int, pid_t, void *, uint16_t);
 void		 engine_show_controller(pid_t);
 void		 engine_show_devices(pid_t);
 void		 engine_show_bonds(pid_t);
+void		 engine_unpair(const struct bdaddr *);
 void		 engine_local_identity(struct bdaddr *);
 void		 engine_ready(void);
 void		 engine_leds(int);

@@ -57,6 +57,11 @@ keyboard, the passkey to type on it.
 Show the stored bonds, without the keys.
 .It Cm show controller
 Show the controller: addresses, versions, firmware and buffers.
+.It Cm unpair Ar address
+Remove the bonds stored for
+.Ar address
+and drop its link, so that the device is paired again when it is
+next found.
 .El
 .Sh FILES
 .Bl -tag -width "/dev/btd.sockXX" -compact

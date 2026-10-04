@@ -103,6 +103,17 @@ Headsets pair with Secure Simple Pairing, Just Works.
 Put the device in pairing mode before starting
 .Nm
 or reloading its configuration.
+.Pp
+A bond is never replaced on the device's initiative.
+If a bonded device no longer has the key, for example after pairing
+with another host, the link fails and
+.Nm
+logs it.
+Remove the bond with the
+.Cm unpair
+command of
+.Xr btctl 8
+to pair it again.
 .Sh AUDIO
 .Xr sndiod 8
 needs a monitor-only sub-device at the SBC rate, for example:

@@ -136,6 +136,7 @@ static void		 smp_enc_status(void *, uint8_t, const uint8_t *,
 			    size_t);
 static void		 ssp_auth_status(void *, uint8_t, const uint8_t *,
 			    size_t);
+static void		 smp_key_missing(const struct bdaddr *);
 
 int
 smp_rpa_match(const uint8_t irk[16], const struct bdaddr *addr)
@@ -272,7 +273,6 @@ void
 smp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
 {
 	struct smp	*smp = c->smp;
-	struct bond	*b;
 
 	if (smp == NULL)
 		return;
@@ -282,12 +282,9 @@ smp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
 		if (status != 0 || !on) {
 			log_warnx("%s: encryption with stored key failed: "
 			    "0x%02x", bdaddr_ntoa(&c->peer), status);
-			if (status == HCI_ERR_KEY_MISSING && c->dev != NULL &&
-			    (b = bond_find(BOND_LE, &c->dev->addr)) != NULL) {
-				log_warnx("%s: peer lost the bond, removing it",
-				    bdaddr_ntoa(&c->dev->addr));
-				bond_delete(b);
-			}
+			if (status == HCI_ERR_KEY_MISSING)
+				smp_key_missing(c->dev != NULL ?
+				    &c->dev->addr : &c->peer);
 			smp->state = SMP_S_IDLE;
 			engine_secured(c, 0);
 			return;
@@ -745,8 +742,14 @@ ssp_event(uint8_t code, const uint8_t *p, size_t len)
 			return;
 		memcpy(addr.b, p, 6);
 		memcpy(rsp, p, 6);
+		rsp[6] = HCI_ERR_PAIRING_NOT_ALLOWED;
 		if (device_find(DEV_HEADSET, &addr) == NULL) {
-			rsp[6] = HCI_ERR_PAIRING_NOT_ALLOWED;
+			hci_cmd(HCI_CMD_IO_CAP_NEG_REPLY, rsp, 7, NULL, NULL);
+			break;
+		}
+		if (bond_find(BOND_BR, &addr) != NULL) {
+			log_warnx("%s: refusing to pair, already bonded",
+			    bdaddr_ntoa(&addr));
 			hci_cmd(HCI_CMD_IO_CAP_NEG_REPLY, rsp, 7, NULL, NULL);
 			break;
 		}
@@ -766,6 +769,13 @@ ssp_event(uint8_t code, const uint8_t *p, size_t len)
 	case HCI_EVT_USER_CONFIRM_REQUEST:
 		if (len < 6)
 			return;
+		memcpy(addr.b, p, 6);
+		if (device_find(DEV_HEADSET, &addr) == NULL ||
+		    bond_find(BOND_BR, &addr) != NULL) {
+			hci_cmd(HCI_CMD_USER_CONFIRM_NEG_REPLY, p, 6, NULL,
+			    NULL);
+			break;
+		}
 		hci_cmd(HCI_CMD_USER_CONFIRM_REPLY, p, 6, NULL, NULL);
 		break;
 	case HCI_EVT_SSP_COMPLETE:
@@ -778,6 +788,13 @@ ssp_event(uint8_t code, const uint8_t *p, size_t len)
 	case HCI_EVT_LINK_KEY_NOTIFICATION:
 		if (len < 23)
 			return;
+		memcpy(addr.b, p, 6);
+		if (device_find(DEV_HEADSET, &addr) == NULL ||
+		    bond_find(BOND_BR, &addr) != NULL) {
+			log_warnx("%s: ignoring unexpected link key",
+			    bdaddr_ntoa(&addr));
+			break;
+		}
 		memset(&nb, 0, sizeof(nb));
 		nb.type = BOND_BR;
 		memcpy(nb.addr.b, p, 6);
@@ -794,12 +811,8 @@ ssp_event(uint8_t code, const uint8_t *p, size_t len)
 		if (p[0] != 0) {
 			log_warnx("%s: authentication failed: 0x%02x",
 			    bdaddr_ntoa(&c->peer), p[0]);
-			if (p[0] == HCI_ERR_KEY_MISSING &&
-			    (b = bond_find(BOND_BR, &c->peer)) != NULL) {
-				log_warnx("%s: peer lost the bond, removing it",
-				    bdaddr_ntoa(&c->peer));
-				bond_delete(b);
-			}
+			if (p[0] == HCI_ERR_KEY_MISSING)
+				smp_key_missing(&c->peer);
 			engine_secured(c, 0);
 			return;
 		}
@@ -808,6 +821,17 @@ ssp_event(uint8_t code, const uint8_t *p, size_t len)
 		hci_cmd(HCI_CMD_SET_CONN_ENCRYPTION, rsp, 3, NULL, NULL);
 		break;
 	}
+}
+
+/*
+ * A peer that claims to have lost the key may as well be another device
+ * using its address: keep the bond and leave it to btctl unpair.
+ */
+static void
+smp_key_missing(const struct bdaddr *addr)
+{
+	log_warnx("%s: peer lost the bond, run \"btctl unpair %s\" to "
+	    "pair again", bdaddr_ntoa(addr), bdaddr_ntoa(addr));
 }
 
 void

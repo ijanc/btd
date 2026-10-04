@@ -121,6 +121,12 @@ main(int argc, char *argv[])
 		printf("reload request sent.\n");
 		done = 1;
 		break;
+	case UNPAIR:
+		imsg_compose(ibuf, IMSG_CTL_UNPAIR, 0, 0, -1, &res->addr,
+		    sizeof(res->addr));
+		printf("unpair request sent.\n");
+		done = 1;
+		break;
 	default:
 		usage();
 	}

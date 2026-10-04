@@ -15,16 +15,21 @@
  */
 
 #include <sys/types.h>
+#include <sys/queue.h>
 
+#include <event.h>
+#include <imsg.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "btd.h"
 #include "parser.h"
 
 enum token_type {
 	NOTOKEN,
 	ENDTOKEN,
-	KEYWORD
+	KEYWORD,
+	ADDRESS
 };
 
 struct token {
@@ -37,11 +42,13 @@ struct token {
 static const struct token	 t_main[];
 static const struct token	 t_show[];
 static const struct token	 t_log[];
+static const struct token	 t_unpair[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"log",		NONE,		t_log},
 	{KEYWORD,	"reload",	RELOAD,		NULL},
 	{KEYWORD,	"show",		SHOW_DEVICES,	t_show},
+	{KEYWORD,	"unpair",	UNPAIR,		t_unpair},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -59,10 +66,16 @@ static const struct token t_log[] = {
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
+static const struct token t_unpair[] = {
+	{ADDRESS,	"",		NONE,		NULL},
+	{ENDTOKEN,	"",		NONE,		NULL}
+};
+
 static const struct token	*match_token(const char *,
 				    const struct token *,
 				    struct parse_result *);
 static void			 show_valid_args(const struct token *);
+static int			 parse_addr(const char *, struct bdaddr *);
 
 struct parse_result *
 parse(int argc, char *argv[])
@@ -121,6 +134,12 @@ match_token(const char *word, const struct token *table,
 					res->action = t->value;
 			}
 			break;
+		case ADDRESS:
+			if (word != NULL && parse_addr(word, &res->addr)) {
+				match++;
+				t = &table[i];
+			}
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -152,8 +171,26 @@ show_valid_args(const struct token *table)
 		case KEYWORD:
 			fprintf(stderr, "  %s\n", table[i].keyword);
 			break;
+		case ADDRESS:
+			fprintf(stderr, "  <address>\n");
+			break;
 		case ENDTOKEN:
 			break;
 		}
 	}
+}
+
+static int
+parse_addr(const char *word, struct bdaddr *addr)
+{
+	unsigned int	 v[6];
+	char		 c;
+	int		 i;
+
+	if (strlen(word) != 17 || sscanf(word, "%2x:%2x:%2x:%2x:%2x:%2x%c",
+	    &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &c) != 6)
+		return (0);
+	for (i = 0; i < 6; i++)
+		addr->b[5 - i] = v[i];
+	return (1);
 }

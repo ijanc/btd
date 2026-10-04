@@ -421,6 +421,7 @@ engine_dispatch_frontend(int fd, short event, void *bula)
 	struct imsgbuf		*ibuf = &iev->ibuf;
 	struct imsg		 imsg;
 	struct ibuf		 data;
+	struct bdaddr		 addr;
 	uint32_t		 type;
 	pid_t			 pid;
 	int			 n, shut = 0, verbose, volume;
@@ -463,6 +464,11 @@ engine_dispatch_frontend(int fd, short event, void *bula)
 			break;
 		case IMSG_CTL_SHOW_BONDS:
 			engine_show_bonds(pid);
+			break;
+		case IMSG_CTL_UNPAIR:
+			if (imsg_get_data(&imsg, &addr, sizeof(addr)) == -1)
+				fatalx("%s: invalid %s", __func__, i2s(type));
+			engine_unpair(&addr);
 			break;
 		case IMSG_AUDIO_FRAME:
 			if (imsg_get_ibuf(&imsg, &data) == -1)
@@ -794,6 +800,33 @@ engine_show_bonds(pid_t pid)
 		    sizeof(cb));
 	}
 	engine_imsg_compose_frontend(IMSG_CTL_END, pid, NULL, 0);
+}
+
+/*
+ * Bonds are only replaced on request: drop them and the link, so that
+ * the device pairs again when it next connects.
+ */
+void
+engine_unpair(const struct bdaddr *addr)
+{
+	struct device	*dev;
+	struct bond	*b;
+	int		 n = 0;
+
+	while ((b = bond_find(BOND_LE, addr)) != NULL ||
+	    (b = bond_find(BOND_BR, addr)) != NULL) {
+		bond_delete(b);
+		n++;
+	}
+	if (n == 0) {
+		log_warnx("%s: unpair: no bond", bdaddr_ntoa(addr));
+		return;
+	}
+	log_info("%s: bond removed", bdaddr_ntoa(addr));
+	if ((dev = device_find(DEV_HID, addr)) == NULL)
+		dev = device_find(DEV_HEADSET, addr);
+	if (dev != NULL && dev->conn != NULL)
+		hci_disconnect(dev->conn, HCI_ERR_REMOTE_USER);
 }
 
 struct device *

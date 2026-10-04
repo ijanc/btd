@@ -46,6 +46,10 @@ btd pairs with a configured device that is not bonded yet when it
 finds it.  A keyboard asks for a passkey, shown by "btctl show" and
 in the log.  Bonds are kept in /var/db/btd/bonds.
 
+A bond is only replaced on request.  If a device lost its key, for
+example after pairing with another host, put it in pairing mode and
+run "btctl unpair address".
+
 Some LE devices, such as Logitech keyboards and mice, advertise a new
 address each time they enter pairing mode.  To pair one again, update
 its hid line to the new address and run "btctl reload".
