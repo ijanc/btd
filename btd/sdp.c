@@ -47,6 +47,7 @@
 #define	ATTR_PROTOCOL_LIST	0x0004
 
 #define	SDP_MAXUUIDS		12
+#define	SDP_MAXCONT		16
 #define	SDP_MAXRSP		2048
 
 struct sdp_attr {
@@ -526,7 +527,7 @@ static void
 sdpc_request(struct l2cap_chan *ch, const uint8_t *cont, size_t clen)
 {
 	struct sdp_query	*q = ch->arg;
-	uint8_t			 p[32];
+	uint8_t			 p[20 + SDP_MAXCONT];
 	size_t			 len;
 
 	q->tid++;
@@ -579,7 +580,8 @@ sdpc_input(struct l2cap_chan *ch, const uint8_t *p, size_t len)
 		return;
 	}
 	clen = p[7 + n];
-	if (7 + n + 1 + clen > len || q->len + n > sizeof(q->buf)) {
+	if (clen > SDP_MAXCONT || 7 + n + 1 + clen > len ||
+	    q->len + n > sizeof(q->buf)) {
 		l2cap_close(ch);
 		return;
 	}
