@@ -630,6 +630,7 @@ smp_finish(struct smp *smp)
 
 	memset(&b, 0, sizeof(b));
 	b.type = BOND_LE;
+	b.flags = BOND_F_LTK | BOND_F_SC;
 	if (c->dev != NULL)
 		b.addr = c->dev->addr;
 	else
@@ -646,7 +647,6 @@ smp_finish(struct smp *smp)
 	}
 	memcpy(b.ltk, smp->ltk, 16);
 	b.keysize = smp->keysize;
-	b.flags = BOND_F_LTK | BOND_F_SC;
 	if (smp->method == SMP_PASSKEY)
 		b.flags |= BOND_F_AUTH;
 	if (smp->have_irk) {
