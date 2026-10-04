@@ -227,6 +227,29 @@ test_leds(void)
 	hid_free(hid);
 }
 
+/*
+ * A key array whose size times count wraps to zero in 32 bits must be
+ * dropped, not read past the report.
+ */
+static void
+test_hostile(void)
+{
+	static uint8_t	 map[] = {
+		0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x05, 0x07,
+		0x19, 0x00, 0x29, 0xff, 0x15, 0x00, 0x26, 0xff,
+		0x00, 0x75, 0x04, 0x97, 0x00, 0x00, 0x00, 0x40,
+		0x81, 0x00, 0xc0,
+	};
+	struct hid	*hid;
+	const uint8_t	 r[] = { 0x11, 0x11, 0x11, 0x11 };
+	const struct ev	 none[1] = { { 0, 0, 0 } };
+
+	if ((hid = hid_new(map, sizeof(map), WSKBD_TYPE_USB)) == NULL)
+		errx(1, "hostile map");
+	check("hostile map", hid, 0, r, sizeof(r), none, 0);
+	hid_free(hid);
+}
+
 int
 main(void)
 {
@@ -234,5 +257,6 @@ main(void)
 	test_kbd(WSKBD_TYPE_PC_XT, "xt", 0x2a, 0x1e);
 	test_kbd(WSKBD_TYPE_USB, "usb", 0xe1, 0x04);
 	test_leds();
+	test_hostile();
 	return (failed);
 }

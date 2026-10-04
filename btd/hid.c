@@ -48,6 +48,7 @@
 #define	HID_MAXIDS		16
 #define	HID_MAXBUTTONS		32
 #define	HID_MAXLED		4
+#define	HID_MAXREPORT		64
 
 #define	NN			0
 
@@ -113,9 +114,24 @@ static struct hid_state	*hid_state(struct hid *, int);
 static void		 hid_key(struct hid *, struct hid_events *, int, int);
 static void		 hid_event(struct hid_events *, u_int, int);
 static void		 hid_flush(int, struct hid_events *);
+static int		 hid_fits(const hid_item_t *, size_t);
 
 #define	KEY_SET(k, u)	((k)[(u) >> 3] |= 1 << ((u) & 7))
 #define	KEY_ISSET(k, u)	((k)[(u) >> 3] & (1 << ((u) & 7)))
+
+/*
+ * The report map comes from the device: only keep items whose bits lie
+ * within a report of len bytes.
+ */
+static int
+hid_fits(const hid_item_t *item, size_t len)
+{
+	if (item->report_size < 1 || item->report_size > 32 ||
+	    item->report_count < 0)
+		return (0);
+	return ((uint64_t)item->pos +
+	    (uint64_t)item->report_size * item->report_count <= len * 8);
+}
 
 struct hid *
 hid_new(uint8_t *map, size_t len, int kbdtype)
@@ -135,7 +151,8 @@ hid_new(uint8_t *map, size_t len, int kbdtype)
 	if ((hd = hid_start_parse(rd, 1 << hid_input, -1)) == NULL)
 		fatal(NULL);
 	while (hid_get_item(hd, &item) > 0) {
-		if (item.kind != hid_input || (item.flags & HIO_CONST))
+		if (item.kind != hid_input || (item.flags & HIO_CONST) ||
+		    !hid_fits(&item, HID_MAXREPORT))
 			continue;
 		if (hid->nfields == HID_MAXFIELDS)
 			break;
@@ -174,6 +191,9 @@ hid_new(uint8_t *map, size_t len, int kbdtype)
 			hid->ledlen = hid_report_size(rd, hid_output,
 			    item.report_ID);
 		} else if (item.report_ID != hid->ledid)
+			continue;
+		if (item.report_size != 1 || hid->ledlen <= 0 ||
+		    !hid_fits(&item, hid->ledlen))
 			continue;
 		hid->led[u] = item;
 		hid->ledmask |= 1 << u;
@@ -255,13 +275,13 @@ hid_report(struct hid *hid, uint8_t id, const uint8_t *data, size_t len)
 	struct hid_state	*st;
 	struct hid_events	 e;
 	hid_item_t		 item;
-	uint8_t			 buf[64], keys[32];
+	uint8_t			 buf[HID_MAXREPORT + 1], keys[32];
 	uint32_t		 buttons = 0, b;
 	int32_t			 v, dx = 0, dy = 0, dz = 0, dw = 0;
 	int			 i, j, u, is_kbd = 0, is_mouse = 0, found = 0;
 
 	memset(buf, 0, sizeof(buf));
-	memcpy(buf, data, len < sizeof(buf) ? len : sizeof(buf));
+	memcpy(buf, data, len < HID_MAXREPORT ? len : HID_MAXREPORT);
 	memset(keys, 0, sizeof(keys));
 
 	for (i = 0; i < hid->nfields; i++) {
@@ -270,9 +290,6 @@ hid_report(struct hid *hid, uint8_t id, const uint8_t *data, size_t len)
 			continue;
 		found = 1;
 		item = f->item;
-		if ((item.pos + item.report_size * item.report_count + 7) / 8 >
-		    sizeof(buf))
-			continue;
 		switch (f->page) {
 		case HID_PAGE_KEYBOARD:
 			is_kbd = 1;
@@ -402,15 +419,18 @@ hid_leds(struct hid *hid, int leds, uint8_t *id, uint8_t *buf, size_t len)
 		0, WSKBD_LED_NUM, WSKBD_LED_CAPS, WSKBD_LED_SCROLL,
 		WSKBD_LED_COMPOSE,
 	};
+	uint8_t			 out[HID_MAXREPORT + 1];
 	int			 u;
 
 	if (hid->ledmask == 0 || hid->ledlen == 0 ||
-	    (size_t)hid->ledlen > len)
+	    (size_t)hid->ledlen > len || hid->ledlen > HID_MAXREPORT)
 		return (-1);
-	memset(buf, 0, hid->ledlen);
+	/* hid_set_data touches the byte after the last bit. */
+	memset(out, 0, sizeof(out));
 	for (u = 1; u <= HID_MAXLED; u++)
 		if (hid->ledmask & (1 << u))
-			hid_set_data(buf, &hid->led[u], (leds & wsled[u]) != 0);
+			hid_set_data(out, &hid->led[u], (leds & wsled[u]) != 0);
+	memcpy(buf, out, hid->ledlen);
 	*id = hid->ledid;
 	return (hid->ledlen);
 }
