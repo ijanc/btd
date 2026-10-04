@@ -1,6 +1,9 @@
 btd - Bluetooth daemon for OpenBSD
 ==================================
 
+WARNING: btd is experimental and has known bugs, some of them security
+relevant (see TODO).  Do not run it on a machine you depend on.
+
 btd drives a USB Bluetooth controller attached as ugen(4) from
 userland.  It keeps Bluetooth Low Energy keyboards and mice connected
 and injects their input into wscons(4), and plays the sndiod(8) mix
