@@ -74,8 +74,6 @@ Bugs
 Daemon conventions
 ------------------
 
-- Makefile: regress in SUBDIR runs the tests on a plain make; add it
-  only for regress, clean, cleandir and obj.
 - daemon(1, 0): with a relative -f the unveil and reload use /.
 - log_init runs before the device opens: startup errors go to syslog
   only.  Move it right before daemon().

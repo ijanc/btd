@@ -1,4 +1,8 @@
-SUBDIR=		btd btctl regress
+SUBDIR=		btd btctl
+
+.if make(regress) || make(clean) || make(cleandir) || make(obj)
+SUBDIR+=	regress
+.endif
 
 VERSION=	0.1
 CLEANFILES=	btd-${VERSION}.tar.gz*
