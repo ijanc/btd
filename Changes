@@ -8,5 +8,6 @@
   * Drive the keyboard LEDs from the state X sets on wskbd0.
   * Keep the headset's AVDTP signalling channel when both sides open
     one at once.
+  * Report the battery level of keyboards and mice.
   * btd.conf(5): document LE devices that change address in pairing
     mode.

@@ -234,6 +234,8 @@ show_device_msg(struct imsg *imsg)
 			printf("\tpasskey %06d\n", cd.passkey);
 		if (cd.info[0] != '\0')
 			printf("\t%s\n", cd.info);
+		if (cd.battery != -1)
+			printf("\tbattery %d%%\n", cd.battery);
 		break;
 	case IMSG_CTL_END:
 		return (1);

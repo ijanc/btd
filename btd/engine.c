@@ -708,6 +708,7 @@ engine_device_ctl(struct device *dev, struct ctl_device *cd)
 	cd->bonded = bond_find(dev->kind == DEV_HID ? BOND_LE : BOND_BR,
 	    &dev->addr) != NULL;
 	cd->passkey = dev->passkey;
+	cd->battery = dev->kind == DEV_HID ? hogp_battery(dev) : -1;
 	if (c != NULL) {
 		cd->handle = c->handle;
 		cd->peer = c->peer;

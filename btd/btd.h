@@ -182,6 +182,7 @@ struct ctl_device {
 	int			 authenticated;
 	int			 sc;
 	int			 passkey;
+	int			 battery;
 	uint16_t		 handle;
 	char			 info[128];
 };
@@ -630,6 +631,7 @@ void		 att_input(struct hci_conn *, const uint8_t *, size_t);
 /* hogp.c */
 void		 hogp_start(struct device *);
 void		 hogp_down(struct device *);
+int		 hogp_battery(struct device *);
 void		 hogp_leds(struct device *, int);
 
 /* hid.c */

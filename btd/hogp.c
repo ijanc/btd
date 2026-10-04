@@ -33,6 +33,8 @@
 #define	UUID_HID_SERVICE	0x1812
 #define	UUID_REPORT_MAP		0x2a4b
 #define	UUID_REPORT		0x2a4d
+#define	UUID_BATTERY_SERVICE	0x180f
+#define	UUID_BATTERY_LEVEL	0x2a19
 
 #define	HOGP_MAXCHARS		32
 #define	HOGP_MAXREPORTS		16
@@ -72,6 +74,10 @@ struct hogp {
 	struct hid		*hid;
 	int			 ready;
 	int			 leds;
+	uint16_t		 bat_end;
+	uint16_t		 bat_value;
+	uint16_t		 bat_cccd;
+	int			 battery;
 };
 
 static void	 hogp_fail(struct hogp *, const char *);
@@ -90,6 +96,14 @@ static void	 hogp_subscribe(struct hogp *);
 static void	 hogp_subscribed(void *, uint8_t, const uint8_t *, size_t);
 static void	 hogp_ready(struct hogp *);
 static void	 hogp_notify(void *, uint16_t, const uint8_t *, size_t);
+static void	 hogp_find_battery(struct hogp *);
+static void	 hogp_bat_service(void *, uint8_t, const uint8_t *, size_t);
+static void	 hogp_find_bat_chars(struct hogp *, uint16_t);
+static void	 hogp_bat_chars(void *, uint8_t, const uint8_t *, size_t);
+static void	 hogp_bat_read(void *, uint8_t, const uint8_t *, size_t);
+static void	 hogp_bat_descs(void *, uint8_t, const uint8_t *, size_t);
+static void	 hogp_bat_subscribed(void *, uint8_t, const uint8_t *, size_t);
+static void	 hogp_bat_level(struct hogp *, const uint8_t *, size_t);
 
 void
 hogp_start(struct device *dev)
@@ -101,6 +115,7 @@ hogp_start(struct device *dev)
 	hogp->dev = dev;
 	hogp->att = dev->conn->att;
 	hogp->leds = -1;
+	hogp->battery = -1;
 	dev->proto = hogp;
 	att_set_notify(hogp->att, hogp_notify, hogp);
 	hogp_find_service(hogp);
@@ -410,6 +425,7 @@ hogp_ready(struct hogp *hogp)
 	log_info("%s: ready, %s", bdaddr_ntoa(&dev->addr), dev->info);
 	device_state(dev, DEV_READY);
 	hogp_leds(dev, engine_state.leds);
+	hogp_find_battery(hogp);
 }
 
 static void
@@ -420,6 +436,10 @@ hogp_notify(void *arg, uint16_t handle, const uint8_t *p, size_t len)
 
 	if (hogp == NULL || !hogp->ready)
 		return;
+	if (handle == hogp->bat_value && handle != 0) {
+		hogp_bat_level(hogp, p, len);
+		return;
+	}
 	for (i = 0; i < hogp->nreports; i++) {
 		if (hogp->reports[i].value != handle)
 			continue;
@@ -454,4 +474,148 @@ hogp_leds(struct device *dev, int leds)
 		log_debug("%s: leds 0x%02x", bdaddr_ntoa(&dev->addr), leds);
 		return;
 	}
+}
+
+/*
+ * The battery level is optional: a device without the service, or one
+ * that refuses it, keeps working without it.
+ */
+static void
+hogp_find_battery(struct hogp *hogp)
+{
+	uint8_t	 p[9];
+
+	p[0] = ATT_OP_FIND_BY_TYPE_REQ;
+	put16(p + 1, 0x0001);
+	put16(p + 3, 0xffff);
+	put16(p + 5, UUID_PRIMARY_SERVICE);
+	put16(p + 7, UUID_BATTERY_SERVICE);
+	att_request(hogp->att, p, sizeof(p), hogp_bat_service, hogp);
+}
+
+static void
+hogp_bat_service(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+
+	if (err != 0 || len < 4) {
+		log_debug("%s: no battery service",
+		    bdaddr_ntoa(&hogp->dev->addr));
+		return;
+	}
+	hogp->bat_end = get16(p + 2);
+	log_debug("%s: battery service 0x%04x-0x%04x",
+	    bdaddr_ntoa(&hogp->dev->addr), get16(p), hogp->bat_end);
+	hogp_find_bat_chars(hogp, get16(p));
+}
+
+static void
+hogp_find_bat_chars(struct hogp *hogp, uint16_t start)
+{
+	uint8_t	 p[7];
+
+	p[0] = ATT_OP_READ_BY_TYPE_REQ;
+	put16(p + 1, start);
+	put16(p + 3, hogp->bat_end);
+	put16(p + 5, UUID_CHARACTERISTIC);
+	att_request(hogp->att, p, sizeof(p), hogp_bat_chars, hogp);
+}
+
+static void
+hogp_bat_chars(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+	size_t		 ilen, off;
+	uint16_t	 last = 0;
+	uint8_t		 q[3];
+
+	if (err != 0 || len < 1 || (ilen = p[0]) < 7)
+		goto none;
+	for (off = 1; off + ilen <= len; off += ilen) {
+		last = get16(p + off);
+		if (ilen != 7 || get16(p + off + 5) != UUID_BATTERY_LEVEL)
+			continue;
+		hogp->bat_value = get16(p + off + 3);
+		q[0] = ATT_OP_READ_REQ;
+		put16(q + 1, hogp->bat_value);
+		att_request(hogp->att, q, sizeof(q), hogp_bat_read, hogp);
+		return;
+	}
+	if (last != 0 && last < hogp->bat_end) {
+		hogp_find_bat_chars(hogp, last + 1);
+		return;
+	}
+ none:
+	log_debug("%s: no battery level", bdaddr_ntoa(&hogp->dev->addr));
+}
+
+static void
+hogp_bat_read(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+	uint8_t		 q[5];
+
+	if (err != 0) {
+		log_warnx("%s: cannot read battery level: 0x%02x",
+		    bdaddr_ntoa(&hogp->dev->addr), err);
+		return;
+	}
+	hogp_bat_level(hogp, p, len);
+	if (hogp->bat_value < hogp->bat_end) {
+		q[0] = ATT_OP_FIND_INFO_REQ;
+		put16(q + 1, hogp->bat_value + 1);
+		put16(q + 3, hogp->bat_end);
+		att_request(hogp->att, q, sizeof(q), hogp_bat_descs, hogp);
+	}
+}
+
+static void
+hogp_bat_descs(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+	size_t		 off;
+	uint8_t		 q[5];
+
+	if (err != 0 || len < 1 || p[0] != 1)
+		return;
+	for (off = 1; off + 4 <= len; off += 4) {
+		if (get16(p + off + 2) == UUID_CHARACTERISTIC)
+			break;
+		if (get16(p + off + 2) != UUID_CCCD)
+			continue;
+		hogp->bat_cccd = get16(p + off);
+		q[0] = ATT_OP_WRITE_REQ;
+		put16(q + 1, hogp->bat_cccd);
+		put16(q + 3, 0x0001);
+		att_request(hogp->att, q, sizeof(q), hogp_bat_subscribed, hogp);
+		return;
+	}
+}
+
+static void
+hogp_bat_subscribed(void *arg, uint8_t err, const uint8_t *p, size_t len)
+{
+	struct hogp	*hogp = arg;
+
+	if (err != 0)
+		log_warnx("%s: cannot subscribe to battery level: 0x%02x",
+		    bdaddr_ntoa(&hogp->dev->addr), err);
+}
+
+static void
+hogp_bat_level(struct hogp *hogp, const uint8_t *p, size_t len)
+{
+	if (len < 1 || p[0] > 100 || p[0] == hogp->battery)
+		return;
+	hogp->battery = p[0];
+	log_info("%s: battery %d%%", bdaddr_ntoa(&hogp->dev->addr),
+	    hogp->battery);
+}
+
+int
+hogp_battery(struct device *dev)
+{
+	struct hogp	*hogp = dev->proto;
+
+	return (hogp != NULL ? hogp->battery : -1);
 }
