@@ -205,7 +205,6 @@ br_bond(uint8_t linkkey_type)
 	bond.linkkey_type = linkkey_type;
 }
 
-/* Answer the pending Read Encryption Key Size, if it was sent. */
 static int
 key_size_reply(uint8_t status, uint8_t size, size_t len)
 {

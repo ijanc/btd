@@ -65,7 +65,6 @@
 
 #define	SMP_TIMEOUT		30
 
-/* Encryption key size, in octets, required on both transports. */
 #define	ENC_KEY_SIZE		16
 
 #define	SMP_JUST_WORKS		0

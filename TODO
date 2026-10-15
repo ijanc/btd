@@ -4,67 +4,66 @@ btd TODO
 Security
 --------
 
-- LE: engine_adv_report matches the configured address by bytes and
-  ignores the address type.
-- avdtp.c: a peer OPEN while streaming moves to A2DP_S_PEER, after which
-  a2dp_stop does nothing; rtp.chan keeps a freed channel and rtp_frame
-  uses it.  Key a2dp_stop on rtp.chan, reject OPEN unless configured.
-- avdtp_accept/avctp_accept accept several channels before sig/media/
-  chan is set; a2dp_down/avrcp_down only clear the tracked one, the
-  others keep arg pointing at freed memory.
-- Reload during an SDP query: device_reconf frees the device, sdpc_close
-  then calls a2dp_sdp with the stale q->dev.
-- L2CAP before authentication: no per-connection channel limit, a
-  channel that never gets CONFIG_REQ never times out, next_cid wraps
-  onto CIDs in use, aclq grows without bound.  l2cap_disconn_req does
-  not check the source CID against ch->rcid.
-- HOGP discovery (hogp_chars, hogp_descs, hogp_bat_chars) restarts from
-  last + 1 without requiring last >= start: a peer can loop it.
-- Logging: the HCI trace at -vvv logs LTKs, link keys, SMP keys and HID
-  reports (keystrokes).  Redact key-bearing packets, stop dumping ACL
-  payloads, clamp the verbosity the control socket accepts.
-- bus: root, no pledge, forwards any HCI opcode and any wscons event
-  type.  Allow only key events to wskbd, mouse events to wsmouse, and a
-  list of HCI opcodes; consider holding the device fds and dropping to
-  _btd, RLIMIT_NPROC 0 after the reader fork.  Document the trust
-  boundary in btd.8.
+- engine_adv_report: match the address type, not only the bytes.
+- avdtp.c: a peer OPEN while streaming moves to A2DP_S_PEER: a2dp_stop
+  does nothing and rtp_frame uses the freed rtp.chan.  Key a2dp_stop on
+  rtp.chan, reject OPEN unless configured.
+- avdtp_accept, avctp_accept: channels accepted before sig/media/chan is
+  set keep arg on freed memory after a2dp_down/avrcp_down.
+- device_reconf during an SDP query frees the device; sdpc_close then
+  calls a2dp_sdp with the stale q->dev.
+- L2CAP before authentication: limit channels per connection, time out
+  a channel that never gets CONFIG_REQ, keep next_cid off CIDs in use,
+  bound aclq.  l2cap_disconn_req: check the source CID against ch->rcid.
+- hogp_chars, hogp_descs, hogp_bat_chars: require last >= start, a peer
+  can loop discovery.
+- -vvv logs LTKs, link keys, SMP keys and HID reports (keystrokes).
+  Redact key-bearing packets, drop ACL payloads, clamp the verbosity the
+  control socket accepts.
+- bus: root, no pledge, forwards any HCI opcode and wscons event type.
+  Allow key events to wskbd, mouse events to wsmouse and a list of HCI
+  opcodes; consider holding the device fds and dropping to _btd,
+  RLIMIT_NPROC 0 after the reader fork.  Document the trust boundary in
+  btd.8.
 - SMP: compare only X when rejecting a reflected public key; reject the
   SC debug public key and the BR debug link key (type 3); validate the
   IO capability and reserved bits of the pairing response.
-- Key material: freezero the HCI command structs carrying an LTK or link
-  key (hci.c), explicit_bzero the bus buffer, cmac() mb/ob and main's
-  stack bond copy, BN_clear_free the DH secret, wipe bond_read's line
-  buffer.
-- Bonds file: check owner and mode on read, fsync the directory after
-  the rename, stricter parsing (%2x accepts 0x, strtoull a minus sign),
-  a bad local line half-overwrites the local identity, duplicates kept.
-- Privsep: main should validate bond type/keysize and cap the count;
-  struct bond and hid_conf cross imsg with TAILQ pointers (heap
-  addresses); a duplicate IMSG_DEVFD_* leaks the old fd; drop sendfd in
-  main and recvfd in frontend after startup; check daemon()'s return;
-  O_CLOEXEC on the lock fd.
+- Key material: freezero the hci.c command structs carrying an LTK or
+  link key; explicit_bzero the bus buffer, cmac() mb/ob, main's stack
+  bond copy and bond_read's line buffer; BN_clear_free the DH secret.
+- Bonds file: check owner and mode, fsync the directory after the
+  rename, parse strictly (%2x takes 0x, strtoull takes a minus sign),
+  a bad local line half-overwrites the identity, duplicates are kept.
+- Privsep: main validates bond type/keysize and caps the count; struct
+  bond and hid_conf send TAILQ pointers over imsg; a duplicate
+  IMSG_DEVFD_* leaks the old fd; drop sendfd in main and recvfd in
+  frontend after startup; check daemon(); O_CLOEXEC on the lock fd.
 - Control socket: getpeereid, root only for reload, log and unpair;
-  reject a payload on SHOW; clients set their own pid, used to route
-  replies.
+  reject a payload on SHOW; replies are routed by the pid the client
+  sets.
 - sndio: a missing or badly permissioned cookie makes libsndio mkdir()
-  and the frontend pledge abort; check it first, or open sndio only
+  and abort the frontend pledge.  Check it first, or open sndio only
   with a headset configured.
-- sbc_init allows bitpool up to 256; at 251 and above the frame exceeds
-  audio.c frame[512].  Cap at 250 and check the length.
-- Hostile controller: ACL bytes beyond the 4100 byte buffer are dropped
-  silently and desync the stream; no check for a duplicate connection
-  handle; acl_num 0 makes aclq grow forever.
+- sbc_init: cap bitpool at 250, above it the frame overflows audio.c
+  frame[512]; check the length.
+- Hostile controller: ACL past the 4100 byte buffer is dropped silently
+  and desyncs the stream; reject a duplicate connection handle; acl_num
+  0 grows aclq forever.
 
 Bugs
 ----
 
-- sdp_send writes the fragment length as the continuation state, the
-  caller uses it as an offset: server responses of 3 or more fragments
-  repeat or skip data.  Pass cont in and write cont + n.
-- rate and bitpool from btd.conf are ignored when the headset sends
-  SET_CONFIGURATION (a2dp_parse_config).  Fix or document.
+- sdp_send writes the fragment length as continuation state, the caller
+  reads an offset: responses of 3 or more fragments repeat or skip data.
+  Pass cont in and write cont + n.
+- a2dp_parse_config ignores rate and bitpool from btd.conf when the
+  headset sends SET_CONFIGURATION.  Fix or document.
 - "headset X { }" is a syntax error: headsetopts_l needs an option.
 - btd.c: a SIGHUP reload logs at debug, a btctl reload at info.
+- A link refused for its security (key size, E0 with a Secure
+  Connections key, authentication failure) is retried every
+  DEV_HEADSET_RETRY seconds forever.  Back off, or wait for a reload or
+  "btctl unpair".
 
 Daemon conventions
 ------------------
@@ -107,11 +106,10 @@ Documentation
   before the keywords; colon-separated, two digits per octet; .Cm for
   the rates; describe the FILES entry; mention the audio role.
 - btctl.8: "log verbose" is level 2 (-vv).
-- Comments: hci_cmd_noreply should say msec holds the queue; capitalise
-  avdtp.c and engine.c one-liners; rtp_frame comment misses the
-  RTP_MAX_FRAMES flush and MTU drop; btd.h "/* engine */" covers shared
-  constants; bond.c format comment omits blank and # lines; bus.c
-  "X" -> "the X server"; hid_test "hand made" -> "hand-made".
+- Comments: hci_cmd_noreply should say msec holds the queue; rtp_frame
+  misses the RTP_MAX_FRAMES flush and MTU drop; btd.h "/* engine */"
+  covers shared constants; bond.c format omits blank and # lines;
+  bus.c "X" -> "the X server"; hid_test "hand made" -> "hand-made".
 - README: give the dropped-audio paragraph its own heading;
   "privilege-separated"; the SBC regress is skipped without ffmpeg.
 - Changes: 0.1 is unreleased but lists fixes to earlier behaviour.
