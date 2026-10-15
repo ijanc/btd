@@ -63,7 +63,6 @@ struct sdp_record {
 };
 
 struct sdp_query {
-	struct device	*dev;
 	void		(*cb)(struct device *, int);
 	uint8_t		 buf[SDP_MAXRSP];
 	size_t		 len;
@@ -518,7 +517,6 @@ sdp_query_avdtp(struct device *dev, void (*cb)(struct device *, int))
 
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal(NULL);
-	q->dev = dev;
 	q->cb = cb;
 	l2cap_connect(dev->conn, L2CAP_PSM_SDP, &sdp_client, q);
 }
@@ -603,7 +601,8 @@ sdpc_close(struct l2cap_chan *ch)
 
 	if (q->done)
 		version = sdpc_version(q->buf, q->len);
-	q->cb(q->dev, version);
+	if (ch->conn->dev != NULL)
+		q->cb(ch->conn->dev, version);
 	free(q);
 }
 
