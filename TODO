@@ -4,9 +4,6 @@ btd TODO
 Security
 --------
 
-- BR/EDR key size: read the encryption key size (HCI 0x1408) after
-  Encryption Change and disconnect below 16; ssp_encryption_changed
-  accepts any size.  LE allows 7, consider 16 for HID.
 - BR/EDR downgrade: engine_encryption accepts E0 (mode 0x01) for a
   Secure Connections link key (type 7/8); require AES-CCM.
 - LE: engine_adv_report matches the configured address by bytes and

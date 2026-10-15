@@ -1,3 +1,3 @@
-SUBDIR=	crypto hid sbc
+SUBDIR=	crypto hid sbc smp
 
 .include <bsd.subdir.mk>

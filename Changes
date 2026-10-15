@@ -13,5 +13,7 @@
     a bonded device and add "btctl unpair" to pair it again.
   * Bound the SDP continuation state and the HID report map fields
     taken from the peer.
+  * Require a 16 octet encryption key: check the key size of BR/EDR
+    links each time encryption starts and refuse shorter LE keys.
   * btd.conf(5): document LE devices that change address in pairing
     mode.

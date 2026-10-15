@@ -58,11 +58,15 @@
 #define	SMP_ERR_NOT_SUPPORTED	0x05
 #define	SMP_ERR_AUTH_REQ	0x03
 #define	SMP_ERR_CONFIRM		0x04
+#define	SMP_ERR_ENC_KEY_SIZE	0x06
 #define	SMP_ERR_UNSPECIFIED	0x08
 #define	SMP_ERR_INVALID		0x0a
 #define	SMP_ERR_DHKEY_CHECK	0x0b
 
 #define	SMP_TIMEOUT		30
+
+/* Encryption key size, in octets, required on both transports. */
+#define	ENC_KEY_SIZE		16
 
 #define	SMP_JUST_WORKS		0
 #define	SMP_PASSKEY		1
@@ -135,6 +139,8 @@ static void		 smp_r(struct smp *, uint8_t *);
 static void		 smp_enc_status(void *, uint8_t, const uint8_t *,
 			    size_t);
 static void		 ssp_auth_status(void *, uint8_t, const uint8_t *,
+			    size_t);
+static void		 ssp_key_size(void *, uint8_t, const uint8_t *,
 			    size_t);
 static void		 smp_key_missing(const struct bdaddr *);
 
@@ -230,6 +236,13 @@ smp_le_secure(struct hci_conn *c)
 
 	b = c->dev != NULL ? bond_find(BOND_LE, &c->dev->addr) : NULL;
 	if (b != NULL && (b->flags & BOND_F_LTK)) {
+		if (b->keysize < ENC_KEY_SIZE) {
+			log_warnx("%s: bond has a %u octet key, run \"btctl "
+			    "unpair %s\" to pair again", bdaddr_ntoa(&c->peer),
+			    b->keysize, bdaddr_ntoa(&b->addr));
+			engine_secured(c, 0);
+			return;
+		}
 		smp->bonded = 1;
 		smp->state = SMP_S_ENCRYPTING;
 		smp_start_encryption(smp, b->ltk, b->ediv, b->rand);
@@ -316,7 +329,7 @@ smp_pair(struct smp *smp)
 	p[1] = SMP_IO_DISPLAY_ONLY;
 	p[2] = 0x00;
 	p[3] = SMP_AUTH_BONDING | SMP_AUTH_MITM | SMP_AUTH_SC;
-	p[4] = 16;
+	p[4] = ENC_KEY_SIZE;
 	p[5] = SMP_DIST_ENC | SMP_DIST_ID;
 	p[6] = SMP_DIST_ENC | SMP_DIST_ID;
 	log_info("%s: pairing", bdaddr_ntoa(&smp->conn->peer));
@@ -411,8 +424,10 @@ smp_pairing_rsp(struct smp *smp, const uint8_t *p, size_t len)
 	    (io == SMP_IO_KEYBOARD_ONLY || io == SMP_IO_KEYBOARD_DISPLAY))
 		smp->method = SMP_PASSKEY;
 	smp->keysize = p[4] < smp->preq[4] ? p[4] : smp->preq[4];
-	if (smp->keysize < 7) {
-		smp_fail(smp, 0x06);
+	if (smp->keysize < ENC_KEY_SIZE) {
+		log_warnx("%s: peer offers a %u octet key",
+		    bdaddr_ntoa(&smp->conn->peer), smp->keysize);
+		smp_fail(smp, SMP_ERR_ENC_KEY_SIZE);
 		return;
 	}
 	smp->dist_resp = p[6] & smp->preq[6] & SMP_DIST_ID;
@@ -579,8 +594,6 @@ smp_check(struct smp *smp, const uint8_t *p, size_t len)
 	}
 	if (dev != NULL)
 		dev->passkey = -1;
-	if (smp->keysize < 16)
-		memset(smp->ltk + smp->keysize, 0, 16 - smp->keysize);
 	smp->state = SMP_S_WAIT_ENCRYPTION;
 	smp_start_encryption(smp, smp->ltk, 0, 0);
 }
@@ -834,10 +847,53 @@ smp_key_missing(const struct bdaddr *addr)
 	    "pair again", bdaddr_ntoa(addr), bdaddr_ntoa(addr));
 }
 
+/*
+ * The key size is negotiated between the controllers each time
+ * encryption starts, so check it every time, not only while securing.
+ */
 void
 ssp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
 {
+	uint8_t	 p[2];
+
+	if (status == 0 && on) {
+		put16(p, c->handle);
+		hci_cmd(HCI_CMD_READ_ENC_KEY_SIZE, p, sizeof(p), ssp_key_size,
+		    (void *)(uintptr_t)c->handle);
+		return;
+	}
 	if (c->dev == NULL || c->dev->state != DEV_SECURING)
 		return;
-	engine_secured(c, status == 0 && on);
+	engine_secured(c, 0);
+}
+
+static void
+ssp_key_size(void *arg, uint8_t status, const uint8_t *rp, size_t len)
+{
+	struct hci_conn	*c;
+
+	/* The handle may belong to a new link that is not encrypted yet. */
+	if ((c = hci_conn_find((uintptr_t)arg)) == NULL || !c->encrypted)
+		return;
+	if (status != 0) {
+		log_warnx("%s: reading the encryption key size failed: "
+		    "0x%02x", bdaddr_ntoa(&c->peer), status);
+		hci_disconnect(c, HCI_ERR_AUTH_FAILURE);
+		return;
+	}
+	if (len < 3 || get16(rp) != c->handle) {
+		log_warnx("%s: bad encryption key size reply",
+		    bdaddr_ntoa(&c->peer));
+		hci_disconnect(c, HCI_ERR_AUTH_FAILURE);
+		return;
+	}
+	if (rp[2] < ENC_KEY_SIZE) {
+		log_warnx("%s: encryption key size %u, need %u",
+		    bdaddr_ntoa(&c->peer), rp[2], ENC_KEY_SIZE);
+		hci_disconnect(c, HCI_ERR_AUTH_FAILURE);
+		return;
+	}
+	if (c->dev == NULL || c->dev->state != DEV_SECURING)
+		return;
+	engine_secured(c, 1);
 }
