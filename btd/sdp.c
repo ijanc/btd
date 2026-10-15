@@ -180,7 +180,7 @@ de_header(const uint8_t *p, size_t len, int *type, size_t *hlen,
 		*dlen = (size_t)p[1] << 24 | (size_t)p[2] << 16 |
 		    (size_t)p[3] << 8 | p[4];
 	}
-	if (*hlen + *dlen > len)
+	if (*dlen > len - *hlen)
 		return (-1);
 	return (0);
 }
