@@ -190,11 +190,19 @@ check(const char *name, int cond)
 
 /* Encryption Change as engine.c reports it. */
 static void
-encrypt(uint8_t status, int on)
+encrypt(uint8_t status, int mode)
 {
 	if (status == 0)
-		conn.encrypted = on;
-	ssp_encryption_changed(&conn, status, on);
+		conn.encrypted = mode;
+	ssp_encryption_changed(&conn, status, mode);
+}
+
+static void
+br_bond(uint8_t linkkey_type)
+{
+	have_bond = 1;
+	bond.type = BOND_BR;
+	bond.linkkey_type = linkkey_type;
 }
 
 /* Answer the pending Read Encryption Key Size, if it was sent. */
@@ -277,6 +285,47 @@ test_br_key_size(void)
 	    disconnect_reason == HCI_ERR_AUTH_FAILURE);
 }
 
+static void
+test_br_cipher(void)
+{
+	setup(LINK_BR, DEV_SECURING);
+	br_bond(7);
+	encrypt(0, 1);
+	check("br sc key with e0 refused", ncmd == 0 && secured != 1 &&
+	    disconnected == 1 && disconnect_reason == HCI_ERR_AUTH_FAILURE);
+
+	setup(LINK_BR, DEV_SECURING);
+	br_bond(8);
+	encrypt(0, 1);
+	check("br authenticated sc key with e0 refused", ncmd == 0 &&
+	    secured != 1 && disconnected == 1);
+
+	setup(LINK_BR, DEV_SECURING);
+	br_bond(7);
+	encrypt(0, 2);
+	check("br sc key with aes-ccm", key_size_reply(0, 16, 3) &&
+	    secured == 1 && disconnected == 0);
+
+	setup(LINK_BR, DEV_SECURING);
+	br_bond(4);
+	encrypt(0, 1);
+	check("br p-192 key with e0", key_size_reply(0, 16, 3) &&
+	    secured == 1 && disconnected == 0);
+
+	setup(LINK_BR, DEV_SECURING);
+	br_bond(5);
+	encrypt(0, 1);
+	check("br authenticated p-192 key with e0",
+	    key_size_reply(0, 16, 3) && secured == 1 && disconnected == 0);
+
+	setup(LINK_BR, DEV_READY);
+	br_bond(7);
+	encrypt(0, 1);
+	check("br ready sc key re-encrypted with e0", ncmd == 0 &&
+	    secured == 0 && disconnected == 1 &&
+	    disconnect_reason == HCI_ERR_AUTH_FAILURE);
+}
+
 /*
  * SMP codes: 0x01 Pairing Request, 0x02 Pairing Response, 0x05 Pairing
  * Failed (0x06 Encryption Key Size), 0x0c Pairing Public Key.
@@ -337,6 +386,7 @@ main(void)
 {
 	event_init();
 	test_br_key_size();
+	test_br_cipher();
 	test_le_key_size();
 	if (conn.smp != NULL)
 		smp_free(&conn);

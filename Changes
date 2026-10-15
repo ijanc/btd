@@ -15,5 +15,7 @@
     taken from the peer.
   * Require a 16 octet encryption key: check the key size of BR/EDR
     links each time encryption starts and refuse shorter LE keys.
+  * Require AES-CCM on BR/EDR links that use a Secure Connections
+    link key.
   * btd.conf(5): document LE devices that change address in pairing
     mode.

@@ -666,20 +666,24 @@ static void
 engine_encryption(const uint8_t *p, size_t len, int refresh)
 {
 	struct hci_conn	*c;
-	int		 on;
+	int		 mode;
 
 	if (len < 3 || (c = hci_conn_find(get16(p + 1) & 0x0fff)) == NULL)
 		return;
-	if (refresh)
-		on = p[0] == 0;
+	if (!refresh)
+		mode = len >= 4 ? p[3] : 0;
+	else if (p[0] != 0)
+		mode = 0;
+	else if (c->encrypted != 0)
+		mode = c->encrypted;
 	else
-		on = len >= 4 && p[3] != 0;
+		mode = 1;
 	if (p[0] == 0)
-		c->encrypted = on;
+		c->encrypted = mode;
 	if (c->link == LINK_LE)
-		smp_encryption_changed(c, p[0], on);
+		smp_encryption_changed(c, p[0], mode != 0);
 	else
-		ssp_encryption_changed(c, p[0], on);
+		ssp_encryption_changed(c, p[0], mode);
 }
 
 static const char *

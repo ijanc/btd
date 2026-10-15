@@ -4,8 +4,6 @@ btd TODO
 Security
 --------
 
-- BR/EDR downgrade: engine_encryption accepts E0 (mode 0x01) for a
-  Secure Connections link key (type 7/8); require AES-CCM.
 - LE: engine_adv_report matches the configured address by bytes and
   ignores the address type.
 - avdtp.c: a peer OPEN while streaming moves to A2DP_S_PEER, after which

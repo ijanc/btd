@@ -349,6 +349,8 @@ void		 bond_delete(struct bond *);
 #define	HCI_ERR_LIMITED_RESOURCES	0x0d
 #define	HCI_ERR_PAIRING_NOT_ALLOWED	0x18
 
+#define	HCI_ENC_AES_CCM			0x02
+
 #define	HCI_SCAN_INQUIRY		0x01
 #define	HCI_SCAN_PAGE			0x02
 

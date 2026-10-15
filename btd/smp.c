@@ -852,11 +852,20 @@ smp_key_missing(const struct bdaddr *addr)
  * encryption starts, so check it every time, not only while securing.
  */
 void
-ssp_encryption_changed(struct hci_conn *c, uint8_t status, int on)
+ssp_encryption_changed(struct hci_conn *c, uint8_t status, int mode)
 {
-	uint8_t	 p[2];
+	struct bond	*b;
+	uint8_t		 p[2];
 
-	if (status == 0 && on) {
+	if (status == 0 && mode != 0) {
+		if (mode != HCI_ENC_AES_CCM &&
+		    (b = bond_find(BOND_BR, &c->peer)) != NULL &&
+		    (b->linkkey_type == 7 || b->linkkey_type == 8)) {
+			log_warnx("%s: Secure Connections link key used "
+			    "without AES-CCM", bdaddr_ntoa(&c->peer));
+			hci_disconnect(c, HCI_ERR_AUTH_FAILURE);
+			return;
+		}
 		put16(p, c->handle);
 		hci_cmd(HCI_CMD_READ_ENC_KEY_SIZE, p, sizeof(p), ssp_key_size,
 		    (void *)(uintptr_t)c->handle);
