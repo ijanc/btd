@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sys/queue.h>
 
+#include <err.h>
 #include <event.h>
 #include <imsg.h>
 #include <stdio.h>
@@ -380,6 +381,49 @@ test_le_key_size(void)
 	check("le bond key size 7 refused", ncmd == 0 && secured == -1);
 }
 
+static void
+le_public_key(const uint8_t pk[64])
+{
+	uint8_t	 p[65];
+
+	p[0] = 0x0c;
+	memcpy(p + 1, pk, 64);
+	smp_input(&conn, p, sizeof(p));
+}
+
+static void
+test_le_public_key(void)
+{
+	static const uint8_t debug_pk[64] = {
+		0xe6, 0x9d, 0x35, 0x0e, 0x48, 0x01, 0x03, 0xcc,
+		0xdb, 0xfd, 0xf4, 0xac, 0x11, 0x91, 0xf4, 0xef,
+		0xb9, 0xa5, 0xf9, 0xe9, 0xa7, 0x83, 0x2c, 0x5e,
+		0x2c, 0xbe, 0x97, 0xf2, 0xd2, 0x03, 0xb0, 0x20,
+		0x8b, 0xd2, 0x89, 0x15, 0xd0, 0x8e, 0x1c, 0x74,
+		0x24, 0x30, 0xed, 0x8f, 0xc2, 0x45, 0x63, 0x76,
+		0x5c, 0x15, 0x52, 0x5a, 0xbf, 0x9a, 0x32, 0x63,
+		0x6d, 0xeb, 0x2a, 0x65, 0x49, 0x9c, 0x80, 0xdc
+	};
+	uint8_t	 pk[64];
+	void	*key;
+
+	if ((key = crypto_ecdh_new(pk)) == NULL)
+		errx(1, "crypto_ecdh_new");
+	crypto_ecdh_free(key);
+	setup(LINK_LE, DEV_SECURING);
+	smp_le_secure(&conn);
+	le_pairing_rsp(16);
+	le_public_key(pk);
+	check("le peer public key accepted", secured == 0 && sent[0] == 0x0c);
+
+	setup(LINK_LE, DEV_SECURING);
+	smp_le_secure(&conn);
+	le_pairing_rsp(16);
+	le_public_key(debug_pk);
+	check("le debug public key refused", sentlen == 2 &&
+	    sent[0] == 0x05 && sent[1] == 0x08 && secured == -1);
+}
+
 int
 main(void)
 {
@@ -387,6 +431,7 @@ main(void)
 	test_br_key_size();
 	test_br_cipher();
 	test_le_key_size();
+	test_le_public_key();
 	if (conn.smp != NULL)
 		smp_free(&conn);
 	return (failed);
